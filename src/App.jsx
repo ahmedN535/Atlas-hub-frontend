@@ -13,6 +13,7 @@ import {
   Layers3,
   Loader2,
   LockKeyhole,
+  Plus,
   Search,
   Send,
   SlidersHorizontal,
@@ -173,6 +174,102 @@ function getAgentMedia(agent) {
     caption: `${categoryLabel} ${label.toLowerCase()} preview`,
     variant: index,
   }));
+}
+
+function normalizeReview(review, index = 0, agent = {}) {
+  return {
+    id: review.id || `${agent.id || "agent"}-review-${index}`,
+    authorInitials: review.authorInitials || getTeamInitials(review.authorName || "Atlas Reviewer"),
+    authorName: review.authorName || "Atlas Reviewer",
+    authorTeam: review.authorTeam || "Contributor",
+    rating: Math.min(5, Math.max(1, Number(review.rating) || 1)),
+    title: review.title || "Useful in production",
+    body: review.body || "This review has not added details yet.",
+    constraints: review.constraints || "",
+    helpfulCount: Number(review.helpfulCount || 0),
+    notHelpfulCount: Number(review.notHelpfulCount || 0),
+    userVote: review.userVote === "helpful" || review.userVote === "not-helpful" ? review.userVote : null,
+    createdAt: review.createdAt || new Date().toISOString(),
+  };
+}
+
+function createSeedReviews(agent) {
+  const category = getCategoryLabel(agent.category).toLowerCase();
+  return [
+    {
+      id: `${agent.id}-seed-review-1`,
+      authorInitials: "ML",
+      authorName: "Mina Lee",
+      authorTeam: "Workflow QA",
+      rating: 5,
+      title: `Strong fit for ${category} handoffs`,
+      body: `${agent.name} gave our team a reliable starting point without hiding the tradeoffs. The output was consistent, easy to review, and close enough to our internal format that rollout was low-friction.`,
+      constraints: "Works best when the input includes clear success criteria; vague tasks produce broader summaries.",
+      helpfulCount: 8,
+      notHelpfulCount: 1,
+      userVote: null,
+      createdAt: "2026-05-29T09:20:00.000Z",
+    },
+    {
+      id: `${agent.id}-seed-review-2`,
+      authorInitials: "AR",
+      authorName: "Arun Rao",
+      authorTeam: "Platform Enablement",
+      rating: 4,
+      title: "Good defaults with a few edge cases",
+      body: `We used this as a baseline agent for a repeated workflow and only had to adjust the final tone. The manual notes were useful for onboarding teammates who had not seen the prompt before.`,
+      constraints: "Long source files need chunking before upload, otherwise the agent can over-prioritize the opening context.",
+      helpfulCount: 5,
+      notHelpfulCount: 0,
+      userVote: null,
+      createdAt: "2026-05-27T14:45:00.000Z",
+    },
+    {
+      id: `${agent.id}-seed-review-3`,
+      authorInitials: "KS",
+      authorName: "Kira Stone",
+      authorTeam: "Operations",
+      rating: 4,
+      title: "Useful for repeatable review work",
+      body: `The agent is strongest when the task is constrained and the expected output is known. It saved time on first-pass analysis and made it easier to compare outputs across contributors.`,
+      constraints: "",
+      helpfulCount: 3,
+      notHelpfulCount: 1,
+      userVote: null,
+      createdAt: "2026-05-24T11:15:00.000Z",
+    },
+  ].map((review, index) => normalizeReview(review, index, agent));
+}
+
+function getInitialReviews(agent) {
+  const source = Array.isArray(agent.reviews) && agent.reviews.length ? agent.reviews : createSeedReviews(agent);
+  return source.map((review, index) => normalizeReview(review, index, agent));
+}
+
+function getReviewSummary(reviews) {
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  reviews.forEach((review) => {
+    counts[review.rating] = (counts[review.rating] || 0) + 1;
+  });
+
+  const total = reviews.length;
+  const average = total
+    ? reviews.reduce((sum, review) => sum + review.rating, 0) / total
+    : 0;
+
+  return { average, counts, total };
+}
+
+function sortReviews(reviews, sortBy) {
+  return [...reviews].sort((a, b) => {
+    if (sortBy === "helpful") {
+      return b.helpfulCount - a.helpfulCount || new Date(b.createdAt) - new Date(a.createdAt);
+    }
+    if (sortBy === "highest") {
+      return b.rating - a.rating || new Date(b.createdAt) - new Date(a.createdAt);
+    }
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
 }
 
 export default function App() {
@@ -969,17 +1066,42 @@ function AgentCard({ agent, index, onOpen }) {
 function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () => {} }) {
   const pageRef = useRef(null);
   const fadeTimerRef = useRef(null);
+  const validationTimerRef = useRef(null);
   const tone = getCategoryTone(agent.category);
   const mediaItems = useMemo(() => getAgentMedia(agent), [agent]);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaFading, setMediaFading] = useState(false);
   const [downloadCount, setDownloadCount] = useState(agent.downloads || 0);
+  const [reviews, setReviews] = useState(() => getInitialReviews(agent));
+  const [reviewSort, setReviewSort] = useState("recent");
+  const [reviewFormOpen, setReviewFormOpen] = useState(false);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [invalidFields, setInvalidFields] = useState({});
+  const [newReviewIds, setNewReviewIds] = useState([]);
+  const [reviewForm, setReviewForm] = useState({
+    rating: 0,
+    title: "",
+    body: "",
+    constraints: "",
+  });
 
   useEffect(() => {
     setActiveMediaIndex(0);
     setMediaFading(false);
     setDownloadCount(agent.downloads || 0);
-  }, [agent.id, agent.downloads]);
+    setReviews(getInitialReviews(agent));
+    setReviewSort("recent");
+    setReviewFormOpen(false);
+    setHoverRating(0);
+    setInvalidFields({});
+    setNewReviewIds([]);
+    setReviewForm({
+      rating: 0,
+      title: "",
+      body: "",
+      constraints: "",
+    });
+  }, [agent]);
 
   useEffect(() => {
     const root = pageRef.current;
@@ -1004,7 +1126,10 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
   }, [agent.id]);
 
   useEffect(() => {
-    return () => window.clearTimeout(fadeTimerRef.current);
+    return () => {
+      window.clearTimeout(fadeTimerRef.current);
+      window.clearTimeout(validationTimerRef.current);
+    };
   }, []);
 
   const relatedAgents = useMemo(
@@ -1024,6 +1149,8 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
   );
 
   const activeMedia = mediaItems[activeMediaIndex] || mediaItems[0];
+  const reviewSummary = useMemo(() => getReviewSummary(reviews), [reviews]);
+  const sortedReviews = useMemo(() => sortReviews(reviews, reviewSort), [reviewSort, reviews]);
   const metadataRows = [
     ["File", agent.file_name],
     ["Model", agent.model],
@@ -1047,6 +1174,82 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
   function handleDownload() {
     setDownloadCount((current) => current + 1);
     onToast("Download started.");
+  }
+
+  function updateReviewForm(field, value) {
+    setReviewForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleReviewVote(reviewId, vote) {
+    setReviews((current) =>
+      current.map((review) => {
+        if (review.id !== reviewId || review.userVote === vote) return review;
+
+        const nextReview = { ...review };
+        if (review.userVote === "helpful") {
+          nextReview.helpfulCount = Math.max(0, nextReview.helpfulCount - 1);
+        }
+        if (review.userVote === "not-helpful") {
+          nextReview.notHelpfulCount = Math.max(0, nextReview.notHelpfulCount - 1);
+        }
+        if (vote === "helpful") {
+          nextReview.helpfulCount += 1;
+        } else {
+          nextReview.notHelpfulCount += 1;
+        }
+        nextReview.userVote = vote;
+        return nextReview;
+      }),
+    );
+    onToast(vote === "helpful" ? "Marked as helpful" : "Marked as not helpful");
+  }
+
+  function submitReview(event) {
+    event.preventDefault();
+    const missing = {
+      rating: reviewForm.rating < 1,
+      body: !reviewForm.body.trim(),
+    };
+
+    if (missing.rating || missing.body) {
+      setInvalidFields(missing);
+      window.clearTimeout(validationTimerRef.current);
+      validationTimerRef.current = window.setTimeout(() => setInvalidFields({}), 340);
+      return;
+    }
+
+    const reviewId = `${agent.id}-local-review-${Date.now()}`;
+    const nextReview = normalizeReview(
+      {
+        id: reviewId,
+        authorInitials: "YO",
+        authorName: "You",
+        authorTeam: "Atlas Hub",
+        rating: reviewForm.rating,
+        title: reviewForm.title.trim() || `Review for ${agent.name}`,
+        body: reviewForm.body.trim(),
+        constraints: reviewForm.constraints.trim(),
+        helpfulCount: 0,
+        notHelpfulCount: 0,
+        userVote: null,
+        createdAt: new Date().toISOString(),
+      },
+      0,
+      agent,
+    );
+
+    setReviews((current) => [nextReview, ...current]);
+    setNewReviewIds((current) => [reviewId, ...current]);
+    setReviewForm({
+      rating: 0,
+      title: "",
+      body: "",
+      constraints: "",
+    });
+    setHoverRating(0);
+    setReviewSort("recent");
+    setReviewFormOpen(false);
+    onToast("Review posted");
   }
 
   return (
@@ -1152,14 +1355,57 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
 
         <ShelfDivider />
 
-        <section className="agent-content-section agent-reveal will-animate">
+        <section className="agent-content-section reviews-section agent-reveal will-animate">
           <h2>Reviews</h2>
-          <div className="reviews-placeholder">
-            <p>Reviews coming soon - be the first to rate this agent.</p>
-            <button className="secondary-btn compact" type="button" onClick={() => onToast("Review submission coming soon.")}>
+          <ReviewSummary summary={reviewSummary} />
+          <div className="review-sort-row">
+            <span>Sort by</span>
+            <div className="review-sort-tabs" role="tablist" aria-label="Sort reviews">
+              {[
+                ["recent", "Most recent"],
+                ["helpful", "Most helpful"],
+                ["highest", "Highest rated"],
+              ].map(([value, label]) => (
+                <button
+                  className={reviewSort === value ? "review-sort-tab active" : "review-sort-tab"}
+                  key={value}
+                  type="button"
+                  onClick={() => setReviewSort(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="review-list">
+            {sortedReviews.map((review) => (
+              <ReviewCard
+                key={review.id}
+                review={review}
+                isNew={newReviewIds.includes(review.id)}
+                onVote={handleReviewVote}
+              />
+            ))}
+          </div>
+          {reviewFormOpen ? (
+            <ReviewForm
+              form={reviewForm}
+              hoverRating={hoverRating}
+              invalidFields={invalidFields}
+              onHoverRating={setHoverRating}
+              onSubmit={submitReview}
+              onUpdate={updateReviewForm}
+            />
+          ) : (
+            <button
+              className="secondary-btn review-write-toggle"
+              type="button"
+              onClick={() => setReviewFormOpen(true)}
+            >
+              <Plus size={16} />
               Write a review
             </button>
-          </div>
+          )}
         </section>
       </div>
 
@@ -1285,6 +1531,189 @@ function AgentMediaPlaceholder({ agent, variant = 0, compact = false }) {
     >
       <Icon size={compact ? 22 : 54} />
     </div>
+  );
+}
+
+function ReviewSummary({ summary }) {
+  const levels = [5, 4, 3, 2, 1];
+  const total = summary.total || 0;
+
+  return (
+    <div className="review-summary">
+      <div className="review-score">
+        <strong>{summary.average.toFixed(1)}</strong>
+        <span>out of 5</span>
+      </div>
+      <div className="review-bar-stack">
+        {levels.map((level) => {
+          const count = summary.counts[level] || 0;
+          const percent = total ? (count / total) * 100 : 0;
+          return (
+            <div className="review-bar-row" key={level}>
+              <span>{level}</span>
+              <div className="review-bar-track">
+                <span className="review-bar-fill" style={{ "--fill-width": `${percent}%` }} />
+              </div>
+              <span>{count}</span>
+            </div>
+          );
+        })}
+        <p className="review-total">
+          {total} {total === 1 ? "review" : "reviews"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ReviewStars({
+  rating,
+  interactive = false,
+  hoverRating = 0,
+  invalid = false,
+  onHoverRating = () => {},
+  onRatingChange = () => {},
+}) {
+  const activeRating = interactive ? hoverRating || rating : rating;
+  const stars = [1, 2, 3, 4, 5];
+
+  if (!interactive) {
+    return (
+      <span className="review-stars" aria-label={`${rating} out of 5 stars`}>
+        {stars.map((star) => (
+          <Star
+            className={star <= rating ? "star-icon filled" : "star-icon empty"}
+            fill="currentColor"
+            key={star}
+            size={14}
+          />
+        ))}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`review-stars rating-picker ${invalid ? "shake-field" : ""}`}
+      onMouseLeave={() => onHoverRating(0)}
+      role="radiogroup"
+      aria-label="Review rating"
+    >
+      {stars.map((star) => (
+        <button
+          aria-checked={rating === star}
+          aria-label={`${star} stars`}
+          className={star <= activeRating ? "star-button filled" : "star-button empty"}
+          key={star}
+          onClick={() => onRatingChange(star)}
+          onMouseEnter={() => onHoverRating(star)}
+          role="radio"
+          type="button"
+        >
+          <Star fill="currentColor" size={22} />
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function ReviewCard({ review, isNew, onVote }) {
+  return (
+    <article className={`review-card ${isNew ? "is-new" : ""}`}>
+      <header className="review-card-header">
+        <span className="review-avatar">{review.authorInitials}</span>
+        <span className="review-author">
+          <strong>{review.authorName}</strong>
+          <small>{review.authorTeam}</small>
+        </span>
+        <ReviewStars rating={review.rating} />
+        <time dateTime={review.createdAt}>{formatDate(review.createdAt)}</time>
+      </header>
+      <h3>{review.title}</h3>
+      <p>{review.body}</p>
+      {review.constraints ? (
+        <div className="review-constraints">
+          <span className="review-warning" aria-hidden="true">
+            {"\u26a0"}
+          </span>
+          <span>{review.constraints}</span>
+        </div>
+      ) : null}
+      <div className="review-helpful">
+        <span>Was this helpful?</span>
+        <button
+          className={review.userVote === "helpful" ? "active" : ""}
+          disabled={review.userVote === "helpful"}
+          type="button"
+          onClick={() => onVote(review.id, "helpful")}
+        >
+          Yes ({review.helpfulCount})
+        </button>
+        <button
+          className={review.userVote === "not-helpful" ? "active" : ""}
+          disabled={review.userVote === "not-helpful"}
+          type="button"
+          onClick={() => onVote(review.id, "not-helpful")}
+        >
+          No ({review.notHelpfulCount})
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function ReviewForm({
+  form,
+  hoverRating,
+  invalidFields,
+  onHoverRating,
+  onSubmit,
+  onUpdate,
+}) {
+  return (
+    <form className="review-form-panel" onSubmit={onSubmit}>
+      <label className="review-form-rating">
+        <span>Rating</span>
+        <ReviewStars
+          rating={form.rating}
+          interactive
+          hoverRating={hoverRating}
+          invalid={invalidFields.rating}
+          onHoverRating={onHoverRating}
+          onRatingChange={(rating) => onUpdate("rating", rating)}
+        />
+      </label>
+      <label>
+        <span>Title</span>
+        <input
+          value={form.title}
+          onChange={(event) => onUpdate("title", event.target.value)}
+          placeholder="Summarise your experience"
+        />
+      </label>
+      <label>
+        <span>Review</span>
+        <textarea
+          className={invalidFields.body ? "shake-field" : ""}
+          value={form.body}
+          onChange={(event) => onUpdate("body", event.target.value)}
+          placeholder="What worked well? What didn't?"
+        />
+      </label>
+      <label>
+        <span>Limitations found (optional)</span>
+        <textarea
+          className="constraints-input"
+          value={form.constraints}
+          onChange={(event) => onUpdate("constraints", event.target.value)}
+          placeholder="Edge cases, model quirks, things to watch out for"
+        />
+      </label>
+      <button className="primary-btn review-submit-btn" type="submit">
+        <Send size={16} />
+        Post review
+      </button>
+    </form>
   );
 }
 
