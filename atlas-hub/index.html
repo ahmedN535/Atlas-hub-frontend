@@ -13,52 +13,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #080808;
-      --bg2: #0f0f0f;
-      --surface: #111111;
-      --surface2: #1a1a1a;
-      --surface3: #222222;
-      --border: rgba(255,255,255,0.07);
-      --border2: rgba(255,255,255,0.13);
-      --text: #f5f5f0;
-      --text2: #888880;
-      --text3: #444440;
-      --gold: #C9A84C;
-      --gold2: #e8c56a;
-      --gold3: #f5d98a;
-      --gold-glow: rgba(201,168,76,0.15);
-      --gold-soft: rgba(201,168,76,0.08);
-      --green: #4ade80;
-      --green-soft: rgba(74,222,128,0.08);
-      --red-soft: rgba(248,113,113,0.08);
-      --radius: 12px;
-      --radius-sm: 8px;
+      --bg: #080808;--bg2: #0f0f0f;--surface: #111111;--surface2: #1a1a1a;--surface3: #222222;
+      --border: rgba(255,255,255,0.07);--border2: rgba(255,255,255,0.13);
+      --text: #f5f5f0;--text2: #888880;--text3: #444440;
+      --gold: #C9A84C;--gold2: #e8c56a;--gold3: #f5d98a;
+      --gold-glow: rgba(201,168,76,0.15);--gold-soft: rgba(201,168,76,0.08);
+      --green: #4ade80;--green-soft: rgba(74,222,128,0.08);--red-soft: rgba(248,113,113,0.08);
+      --radius: 12px;--radius-sm: 8px;
     }
     [data-theme="light"] {
-      --bg: #fafaf7;
-      --bg2: #f2f2ed;
-      --surface: #ffffff;
-      --surface2: #f5f5f0;
-      --surface3: #ebebE5;
-      --border: rgba(0,0,0,0.07);
-      --border2: rgba(0,0,0,0.13);
-      --text: #0a0a08;
-      --text2: #666660;
-      --text3: #aaaaA0;
-      --gold-glow: rgba(201,168,76,0.1);
-      --gold-soft: rgba(201,168,76,0.07);
+      --bg: #fafaf7;--bg2: #f2f2ed;--surface: #ffffff;--surface2: #f5f5f0;--surface3: #ebebE5;
+      --border: rgba(0,0,0,0.07);--border2: rgba(0,0,0,0.13);
+      --text: #0a0a08;--text2: #666660;--text3: #aaaaA0;
+      --gold-glow: rgba(201,168,76,0.1);--gold-soft: rgba(201,168,76,0.07);
     }
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;transition:background .3s,color .3s}
-
-    /* subtle noise texture overlay */
     body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.4}
-
-    /* grid lines */
     .grid-bg{position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:52px 52px;pointer-events:none;z-index:0}
     [data-theme="dark"] .grid-bg::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% -5%,rgba(201,168,76,0.07) 0%,transparent 65%)}
-
-    /* NAV */
     nav{position:sticky;top:0;z-index:200;border-bottom:1px solid var(--border);background:rgba(8,8,8,0.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transition:background .3s}
     [data-theme="light"] nav{background:rgba(250,250,247,0.88)}
     .nav-inner{max-width:1160px;margin:0 auto;padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between}
@@ -75,7 +48,14 @@
     .btn-gold:hover{background:var(--gold2);box-shadow:0 0 32px var(--gold-glow);transform:translateY(-1px)}
     .btn-gold:active{transform:translateY(0);opacity:.9}
 
-    /* HERO */
+    /* === NEW: LOGIN BUTTON & USER PILL === */
+    .btn-signin{background:none;border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:7px 16px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s}
+    .btn-signin:hover{background:var(--gold-soft);border-color:var(--gold)}
+    .user-pill{display:none;align-items:center;gap:8px;background:var(--gold-soft);border:1px solid rgba(201,168,76,0.3);border-radius:20px;padding:5px 14px 5px 8px;cursor:pointer;transition:all .15s}
+    .user-pill:hover{background:var(--surface2)}
+    .user-av{width:22px;height:22px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0a0a08}
+    .user-name{font-family:'Geist Mono',monospace;font-size:11px;color:var(--gold2)}
+
     .hero{max-width:1160px;margin:0 auto;padding:88px 28px 64px;text-align:center;position:relative;z-index:1}
     .hero-pill{display:inline-flex;align-items:center;gap:8px;font-family:'Geist Mono',monospace;font-size:11px;color:var(--gold);background:var(--gold-soft);border:1px solid rgba(201,168,76,0.2);padding:5px 14px;border-radius:20px;margin-bottom:28px;letter-spacing:.3px}
     .hero-pill-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px var(--gold);animation:pulse 2s infinite}
@@ -84,40 +64,28 @@
     .hero h1 em{font-family:'Instrument Serif',serif;font-style:italic;background:linear-gradient(135deg,var(--gold),var(--gold3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .hero-sub{font-size:16px;color:var(--text2);max-width:440px;margin:0 auto 36px;line-height:1.65}
     .hero-cta{display:flex;align-items:center;justify-content:center;gap:12px}
-
-    /* STATS */
     .stats-bar{position:relative;z-index:1;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
     .stats-inner{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border)}
     .stat{background:var(--bg);padding:22px 28px;text-align:center;transition:background .15s;cursor:default}
     .stat:hover{background:var(--surface)}
     .stat-n{font-size:26px;font-weight:600;letter-spacing:-1px;color:var(--gold)}
     .stat-l{font-size:11px;color:var(--text3);margin-top:3px;font-family:'Geist Mono',monospace;letter-spacing:.3px}
-
-    /* MAIN */
     .main{max-width:1160px;margin:0 auto;padding:48px 28px 100px;position:relative;z-index:1}
-
-    /* SEARCH */
     .search-box{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:13px 18px;margin-bottom:16px;transition:border-color .2s,box-shadow .2s}
     .search-box:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
     .search-box svg{flex-shrink:0;color:var(--text3)}
     .search-box input{flex:1;background:none;border:none;outline:none;font-size:14px;color:var(--text);font-family:'Geist',sans-serif}
     .search-box input::placeholder{color:var(--text3)}
     .kbd{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:3px 7px;border-radius:5px}
-
-    /* CHIPS */
     .chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:40px}
     .chip{background:none;border:1px solid var(--border);color:var(--text2);padding:5px 16px;border-radius:20px;font-size:12px;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s;white-space:nowrap}
     .chip:hover{border-color:rgba(201,168,76,0.3);color:var(--text)}
     .chip.on{background:var(--gold-soft);border-color:rgba(201,168,76,0.35);color:var(--gold2)}
-
-    /* SECTION */
     .sec{margin-bottom:52px}
     .sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
     .sec-title{font-size:10px;font-weight:500;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase}
     .see-all-btn{font-size:12px;color:var(--gold);background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;transition:color .15s}
     .see-all-btn:hover{color:var(--gold2)}
-
-    /* CARDS */
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px}
     .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:border-color .2s,transform .2s,box-shadow .2s;text-decoration:none;display:block;position:relative;overflow:hidden}
     .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .3s}
@@ -126,12 +94,7 @@
     .card.top{border-color:rgba(201,168,76,0.12)}
     .card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
     .ci{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px}
-    .ci.pu{background:rgba(167,139,250,0.1)}
-    .ci.te{background:rgba(74,222,128,0.08)}
-    .ci.co{background:rgba(248,113,113,0.08)}
-    .ci.bl{background:rgba(96,165,250,0.08)}
-    .ci.am{background:rgba(201,168,76,0.1)}
-    .ci.pk{background:rgba(244,114,182,0.08)}
+    .ci.pu{background:rgba(167,139,250,0.1)}.ci.te{background:rgba(74,222,128,0.08)}.ci.co{background:rgba(248,113,113,0.08)}.ci.bl{background:rgba(96,165,250,0.08)}.ci.am{background:rgba(201,168,76,0.1)}.ci.pk{background:rgba(244,114,182,0.08)}
     .bdg{font-size:10px;font-family:'Geist Mono',monospace;padding:3px 8px;border-radius:5px;font-weight:500}
     .bdg-pop{background:var(--gold-soft);color:var(--gold2);border:1px solid rgba(201,168,76,0.2)}
     .bdg-new{background:var(--green-soft);color:var(--green);border:1px solid rgba(74,222,128,0.2)}
@@ -141,8 +104,6 @@
     .tags{display:flex;gap:5px;flex-wrap:wrap}
     .tag{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);background:var(--surface2);padding:2px 7px;border-radius:4px;border:1px solid var(--border)}
     .endorses{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text3)}
-
-    /* TRENDING */
     .trend-list{display:flex;flex-direction:column;gap:6px}
     .trow{display:flex;align-items:center;gap:16px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all .15s;text-decoration:none}
     .trow:hover{border-color:rgba(201,168,76,0.25);background:var(--surface2)}
@@ -153,20 +114,13 @@
     .tname{font-size:13px;font-weight:500;color:var(--text)}
     .tteam{font-size:11px;color:var(--text3);margin-top:1px}
     .tscore{display:flex;align-items:center;gap:5px;font-family:'Geist Mono',monospace;font-size:12px;color:var(--text2)}
-
-    /* ENDORSEMENTS */
     .egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
     .ecard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
     .ecard-quote{font-size:13px;color:var(--text2);line-height:1.6;font-style:italic;margin-bottom:12px;border-left:2px solid rgba(201,168,76,0.3);padding-left:12px}
     .eby{display:flex;align-items:center;gap:8px}
     .av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;flex-shrink:0}
-    .av-a{background:rgba(201,168,76,0.15);color:var(--gold2)}
-    .av-b{background:rgba(74,222,128,0.12);color:var(--green)}
-    .av-c{background:rgba(167,139,250,0.12);color:#a78bfa}
-    .av-d{background:rgba(96,165,250,0.1);color:#60a5fa}
+    .av-a{background:rgba(201,168,76,0.15);color:var(--gold2)}.av-b{background:rgba(74,222,128,0.12);color:var(--green)}.av-c{background:rgba(167,139,250,0.12);color:#a78bfa}.av-d{background:rgba(96,165,250,0.1);color:#60a5fa}
     .ename{font-size:11px;color:var(--text3)}
-
-    /* MODAL */
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:500;align-items:center;justify-content:center;padding:20px}
     .modal-overlay.open{display:flex}
     .modal{background:var(--surface);border:1px solid rgba(201,168,76,0.2);border-radius:16px;padding:32px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 40px 80px rgba(0,0,0,.6)}
@@ -185,8 +139,7 @@
     .submit-btn{width:100%;background:var(--gold);color:#0a0a08;border:none;padding:12px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s;margin-top:8px}
     .submit-btn:hover{background:var(--gold2);box-shadow:0 0 24px var(--gold-glow)}
     .submit-btn:active{transform:scale(.99)}
-
-    /* DETAIL MODAL */
+    .submit-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
     .detail-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
     .detail-icon{width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
     .detail-name{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-.4px;margin-bottom:4px}
@@ -204,30 +157,78 @@
     .endorse-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
     .endorse-btn:active{transform:scale(.98)}
     .endorse-success{display:none;font-size:12px;color:var(--green);margin-top:8px;font-family:'Geist Mono',monospace}
-
-    /* TOAST */
     .toast{position:fixed;bottom:28px;right:28px;background:var(--surface);border:1px solid rgba(201,168,76,0.3);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);z-index:900;transform:translateY(80px);opacity:0;transition:all .3s;box-shadow:0 8px 32px rgba(0,0,0,.4)}
     .toast.show{transform:translateY(0);opacity:1}
-
-    /* DIVIDER */
     .divider{border:none;border-top:1px solid var(--border);margin:0 0 52px}
-
-    /* EMPTY */
     .empty{text-align:center;padding:48px;color:var(--text3);font-size:13px}
-
-    /* ANIMATIONS */
     @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
     .card{animation:fadeUp .3s ease both}
-    .card:nth-child(1){animation-delay:.04s}
-    .card:nth-child(2){animation-delay:.08s}
-    .card:nth-child(3){animation-delay:.12s}
-    .card:nth-child(4){animation-delay:.16s}
-    .card:nth-child(5){animation-delay:.20s}
-    .card:nth-child(6){animation-delay:.24s}
+    .card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}.card:nth-child(5){animation-delay:.20s}.card:nth-child(6){animation-delay:.24s}
+
+    /* === NEW: FILE DROP & AI PREVIEW === */
+    .file-drop{border:2px dashed var(--border2);border-radius:var(--radius);padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:18px;position:relative}
+    .file-drop:hover,.file-drop.drag-over{border-color:var(--gold);background:var(--gold-soft)}
+    .file-drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .file-drop-icon{font-size:28px;margin-bottom:8px;opacity:.6}
+    .file-drop-text{font-size:13px;color:var(--text2);line-height:1.6}
+    .file-drop-text strong{color:var(--gold2)}
+    .file-drop-hint{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);margin-top:5px;letter-spacing:.3px}
+    .file-chosen{display:none;align-items:center;gap:10px;background:var(--gold-soft);border:1px solid rgba(201,168,76,0.3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:18px}
+    .file-chosen-name{font-family:'Geist Mono',monospace;font-size:12px;color:var(--gold2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .file-chosen-remove{background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;padding:0 4px;transition:color .15s}
+    .file-chosen-remove:hover{color:var(--text)}
+    .ai-preview{display:none;background:var(--surface2);border:1px solid rgba(201,168,76,0.2);border-radius:var(--radius);padding:16px;margin-bottom:18px}
+    .ai-preview-label{font-family:'Geist Mono',monospace;font-size:10px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+    .ai-pulse{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 1s infinite}
+    .ai-preview-text{font-size:13px;color:var(--text2);line-height:1.6}
+    .ai-tags-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+    .ai-tag{font-family:'Geist Mono',monospace;font-size:10px;color:var(--gold2);background:var(--gold-soft);padding:3px 10px;border-radius:4px;border:1px solid rgba(201,168,76,0.2)}
+
+    /* === NEW: LOGIN MODAL EXTRAS === */
+    .login-divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--text3);font-size:12px;font-family:'Geist Mono',monospace}
+    .login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+    .social-btn{width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:10px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px}
+    .social-btn:hover{background:var(--surface3);border-color:var(--border2)}
+    .login-switch{text-align:center;font-size:12px;color:var(--text3);margin-top:16px;font-family:'Geist',sans-serif}
+    .login-switch a{color:var(--gold2);text-decoration:none;cursor:pointer}
+    .login-switch a:hover{color:var(--gold3)}
+    .spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
 <div class="grid-bg"></div>
+
+<!-- LOGIN MODAL -->
+<div class="modal-overlay" id="loginModal" onclick="closeModalOnBg(event,'loginModal')">
+  <div class="modal" style="max-width:420px">
+    <button class="modal-close" onclick="closeModal('loginModal')">✕</button>
+    <div class="modal-title" id="loginTitle">Welcome back</div>
+    <div class="modal-sub" id="loginSub">Sign in to publish agents and endorse workflows.</div>
+    <div id="loginForm">
+      <button class="social-btn" onclick="loginWith('Google')">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Continue with Google
+      </button>
+      <button class="social-btn" onclick="loginWith('GitHub')">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Continue with GitHub
+      </button>
+      <div class="login-divider">or</div>
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@company.com"></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPass" placeholder="••••••••"></div>
+      <button class="submit-btn" onclick="doLogin()">Sign in →</button>
+      <div class="login-switch">No account? <a onclick="switchToSignup()">Sign up</a></div>
+    </div>
+    <div id="signupForm" style="display:none">
+      <div class="field"><label>Name</label><input type="text" id="signupName" placeholder="Your name"></div>
+      <div class="field"><label>Email</label><input type="email" id="signupEmail" placeholder="you@company.com"></div>
+      <div class="field"><label>Password</label><input type="password" id="signupPass" placeholder="Choose a password"></div>
+      <button class="submit-btn" onclick="doSignup()">Create account →</button>
+      <div class="login-switch">Already have an account? <a onclick="switchToLogin()">Sign in</a></div>
+    </div>
+  </div>
+</div>
 
 <!-- UPLOAD MODAL -->
 <div class="modal-overlay" id="uploadModal" onclick="closeModalOnBg(event,'uploadModal')">
@@ -235,6 +236,25 @@
     <button class="modal-close" onclick="closeModal('uploadModal')">✕</button>
     <div class="modal-title">Upload an agent</div>
     <div class="modal-sub">Share a proven agent with the agent registry so your team — and others — can reuse it.</div>
+
+    <div class="field"><label>Agent file</label></div>
+    <div class="file-drop" id="fileDrop">
+      <input type="file" id="fileInput" accept=".txt,.md,.json,.yaml,.yml,.py,.js,.pdf" onchange="handleFile(this)">
+      <div class="file-drop-icon">⬇</div>
+      <div class="file-drop-text">Drag and drop your file here, or <strong>click to browse</strong></div>
+      <div class="file-drop-hint">SUPPORTED: .txt · .md · .json · .yaml · .py · .js · .pdf</div>
+    </div>
+    <div class="file-chosen" id="fileChosen">
+      <span style="font-size:16px">📄</span>
+      <span class="file-chosen-name" id="fileChosenName"></span>
+      <button class="file-chosen-remove" onclick="removeFile()">✕</button>
+    </div>
+    <div class="ai-preview" id="aiPreview">
+      <div class="ai-preview-label"><span class="ai-pulse"></span> AI-generated description</div>
+      <div class="ai-preview-text" id="aiPreviewText"></div>
+      <div class="ai-tags-row" id="aiTagsRow"></div>
+    </div>
+
     <div class="field"><label>Agent name</label><input type="text" id="agentName" placeholder="e.g. CV Screener"></div>
     <div class="field"><label>What it does</label><textarea id="agentDesc" placeholder="Describe what the agent does in 1–2 sentences…"></textarea></div>
     <div class="form-row">
@@ -253,7 +273,7 @@
     <div class="field"><label>When to use it</label><input type="text" id="agentWhen" placeholder="e.g. When screening more than 20 applicants"></div>
     <div class="field"><label>When NOT to use it</label><input type="text" id="agentWhenNot" placeholder="e.g. For roles requiring portfolio review"></div>
     <div class="field"><label>Your team</label><input type="text" id="agentTeam" placeholder="e.g. People Ops @ Acme"></div>
-    <button class="submit-btn" onclick="submitAgent()">Publish agent →</button>
+    <button class="submit-btn" id="publishBtn" onclick="submitAgent()">Publish agent →</button>
   </div>
 </div>
 
@@ -262,7 +282,6 @@
   <div class="modal" id="detailContent"></div>
 </div>
 
-<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
 <nav>
@@ -277,7 +296,12 @@
       <a class="btn-ghost" href="#browse" onclick="document.getElementById('browse').scrollIntoView({behavior:'smooth'})">Browse</a>
       <a class="btn-ghost" href="collection.html">Collections</a>
       <a class="btn-ghost" href="user.html">Profile</a>
-      <button class="btn-gold" onclick="openModal('uploadModal')">+ Upload agent</button>
+      <button class="btn-signin" id="signinBtn" onclick="openModal('loginModal')">Sign in</button>
+      <div class="user-pill" id="userPill" onclick="logOut()">
+        <div class="user-av" id="userAv">?</div>
+        <span class="user-name" id="userName">user</span>
+      </div>
+      <button class="btn-gold" onclick="requireLogin()">+ Upload agent</button>
     </div>
   </div>
 </nav>
@@ -287,7 +311,7 @@
   <h1>The agent registry for<br><em>reusable AI agents</em></h1>
   <p class="hero-sub">One place to publish, discover, and trust the AI agents your organization has already proven.</p>
   <div class="hero-cta">
-    <button class="btn-gold" onclick="openModal('uploadModal')">+ Upload your agent</button>
+    <button class="btn-gold" onclick="requireLogin()">+ Upload your agent</button>
     <a class="btn-ghost" href="#browse">Browse agent registry</a>
   </div>
 </div>
@@ -307,7 +331,6 @@
     <input type="text" id="searchInput" placeholder="Search agents by task, tool, or team…" oninput="applyFilters()">
     <span class="kbd">⌘K</span>
   </div>
-
   <div class="chips" id="chips">
     <button class="chip on" onclick="setFilter('all',this)">All agents</button>
     <button class="chip" onclick="setFilter('hr',this)">HR &amp; recruiting</button>
@@ -317,7 +340,6 @@
     <button class="chip" onclick="setFilter('finance',this)">Finance</button>
     <button class="chip" onclick="setFilter('devops',this)">DevOps</button>
   </div>
-
   <div class="sec">
     <div class="sec-head">
       <span class="sec-title">Featured agents</span>
@@ -326,16 +348,12 @@
     <div class="grid" id="agentGrid"></div>
     <div class="empty" id="emptyMsg" style="display:none">No agents match that search.</div>
   </div>
-
   <hr class="divider">
-
   <div class="sec">
     <div class="sec-head"><span class="sec-title">Trending this week</span></div>
     <div class="trend-list" id="trendList"></div>
   </div>
-
   <hr class="divider">
-
   <div class="sec">
     <div class="sec-head"><span class="sec-title">From the community</span></div>
     <div class="egrid" id="endorseGrid"></div>
@@ -366,6 +384,7 @@
   ];
 
   let activeFilter='all';
+  let currentUser=null;
 
   function renderAgents(list){
     const g=document.getElementById('agentGrid');
@@ -423,7 +442,6 @@
     el.classList.add('on');
     applyFilters();
   }
-
   function applyFilters(){
     const q=document.getElementById('searchInput').value.toLowerCase();
     let list=agents;
@@ -441,29 +459,13 @@
       <div class="detail-icon ci ${a.ci}" style="width:52px;height:52px;font-size:26px">${a.icon}</div>
       <div>
         <div class="detail-name">${a.name}</div>
-        <div class="detail-meta">
-          <span>${a.team}</span>
-          <span>·</span>
-          <span style="color:var(--gold2)">${a.endorsed} endorsements</span>
-        </div>
+        <div class="detail-meta"><span>${a.team}</span><span>·</span><span style="color:var(--gold2)">${a.endorsed} endorsements</span></div>
       </div>
     </div>
-    <div class="detail-section">
-      <div class="detail-section-title">What it does</div>
-      <div class="detail-text">${a.desc}</div>
-    </div>
-    <div class="detail-section">
-      <div class="detail-section-title">When to use</div>
-      <div class="detail-text">${a.when}</div>
-    </div>
-    <div class="detail-section">
-      <div class="detail-section-title">When NOT to use</div>
-      <div class="warning-box">${a.whenNot}</div>
-    </div>
-    <div class="detail-section">
-      <div class="detail-section-title">Tools & models</div>
-      <div class="detail-tags">${a.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div>
-    </div>
+    <div class="detail-section"><div class="detail-section-title">What it does</div><div class="detail-text">${a.desc}</div></div>
+    <div class="detail-section"><div class="detail-section-title">When to use</div><div class="detail-text">${a.when}</div></div>
+    <div class="detail-section"><div class="detail-section-title">When NOT to use</div><div class="warning-box">${a.whenNot}</div></div>
+    <div class="detail-section"><div class="detail-section-title">Tools & models</div><div class="detail-tags">${a.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div></div>
     <div class="endorse-form">
       <div class="detail-section-title" style="margin-bottom:10px">Endorse this agent</div>
       <textarea class="endorse-input" id="endorseText" placeholder="We used this for… it saved us… works best when…"></textarea>
@@ -495,13 +497,129 @@
     if(!name||!desc){showToast('Please fill in at least a name and description.');return;}
     const icons={hr:'👤',support:'💬',docs:'📄',research:'📚',finance:'📈',devops:'🛡️'};
     const cis={hr:'pu',support:'te',docs:'bl',research:'pk',finance:'co',devops:'am'};
-    agents.unshift({id:Date.now(),name,desc,icon:icons[cat]||'🤖',ci:cis[cat]||'pu',tags:[cat,model||'Custom'],endorsed:0,cat,badge:'new',featured:true,when:when||'—',whenNot:whenNot||'—',team:team||'Anonymous'});
+    agents.unshift({id:Date.now(),name,desc,icon:icons[cat]||'🤖',ci:cis[cat]||'pu',tags:[cat,model||'Custom'],endorsed:0,cat,badge:'new',featured:true,when:when||'—',whenNot:whenNot||'—',team:team||(currentUser||'Anonymous')});
     document.getElementById('countAgents').textContent=parseInt(document.getElementById('countAgents').textContent)+1;
     closeModal('uploadModal');
     applyFilters();
-    showToast('Agent published to the agent registry!');
+    showToast('Agent published to the registry!');
+    removeFile();
     ['agentName','agentDesc','agentModel','agentWhen','agentWhenNot','agentTeam'].forEach(id=>document.getElementById(id).value='');
   }
+
+  /* AUTH */
+  function requireLogin(){
+    if(currentUser) openModal('uploadModal');
+    else{openModal('loginModal');showToast('Please sign in first');}
+  }
+  function loginWith(provider){
+    setLoggedIn(provider==='Google'?'Alex G.':'Dev User');
+    closeModal('loginModal');
+    showToast('Signed in with '+provider+' ✓');
+  }
+  function doLogin(){
+    const email=document.getElementById('loginEmail').value.trim();
+    const pass=document.getElementById('loginPass').value;
+    if(!email||!pass){showToast('Please fill in email and password.');return;}
+    setLoggedIn(email.split('@')[0]);
+    closeModal('loginModal');
+    showToast('Signed in ✓');
+  }
+  function doSignup(){
+    const name=document.getElementById('signupName').value.trim();
+    const email=document.getElementById('signupEmail').value.trim();
+    const pass=document.getElementById('signupPass').value;
+    if(!name||!email||!pass){showToast('Please fill in all fields.');return;}
+    setLoggedIn(name);
+    closeModal('loginModal');
+    showToast('Welcome, '+name+'!');
+  }
+  function setLoggedIn(name){
+    currentUser=name;
+    document.getElementById('signinBtn').style.display='none';
+    const pill=document.getElementById('userPill');
+    pill.style.display='flex';
+    document.getElementById('userAv').textContent=name[0].toUpperCase();
+    document.getElementById('userName').textContent=name;
+  }
+  function logOut(){
+    currentUser=null;
+    document.getElementById('signinBtn').style.display='block';
+    document.getElementById('userPill').style.display='none';
+    showToast('Signed out');
+  }
+  function switchToSignup(){
+    document.getElementById('loginTitle').textContent='Create account';
+    document.getElementById('loginSub').textContent='Join Atlas Hub and start publishing agents.';
+    document.getElementById('loginForm').style.display='none';
+    document.getElementById('signupForm').style.display='block';
+  }
+  function switchToLogin(){
+    document.getElementById('loginTitle').textContent='Welcome back';
+    document.getElementById('loginSub').textContent='Sign in to publish agents and endorse workflows.';
+    document.getElementById('loginForm').style.display='block';
+    document.getElementById('signupForm').style.display='none';
+  }
+
+  /* FILE UPLOAD */
+  function handleFile(input){
+    const file=input.files[0];if(!file)return;
+    document.getElementById('fileDrop').style.display='none';
+    document.getElementById('fileChosen').style.display='flex';
+    document.getElementById('fileChosenName').textContent=file.name;
+    const reader=new FileReader();
+    reader.onload=e=>generateAIDescription(file.name,e.target.result);
+    reader.readAsText(file);
+  }
+  function removeFile(){
+    document.getElementById('fileInput').value='';
+    document.getElementById('fileDrop').style.display='block';
+    document.getElementById('fileChosen').style.display='none';
+    document.getElementById('aiPreview').style.display='none';
+    document.getElementById('agentDesc').value='';
+    document.getElementById('agentName').value='';
+  }
+  async function generateAIDescription(filename,content){
+    const preview=document.getElementById('aiPreview');
+    const previewText=document.getElementById('aiPreviewText');
+    const tagsRow=document.getElementById('aiTagsRow');
+    const btn=document.getElementById('publishBtn');
+    preview.style.display='block';
+    previewText.innerHTML='<span class="spinner"></span> Analysing your file…';
+    tagsRow.innerHTML='';btn.disabled=true;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',max_tokens:1000,
+          messages:[{role:'user',content:`Analyse this AI agent file called "${filename}":\n\n${content.substring(0,3000)}\n\nRespond ONLY with JSON (no markdown): {"name":"short agent name","description":"1-2 sentence description","tags":["tag1","tag2"],"category":"hr|support|docs|research|finance|devops","when_to_use":"brief sentence","when_not_to_use":"brief sentence"}`}]
+        })
+      });
+      const data=await res.json();
+      const parsed=JSON.parse(data.content[0].text);
+      document.getElementById('agentName').value=parsed.name||'';
+      document.getElementById('agentDesc').value=parsed.description||'';
+      document.getElementById('agentWhen').value=parsed.when_to_use||'';
+      document.getElementById('agentWhenNot').value=parsed.when_not_to_use||'';
+      if(parsed.category){const sel=document.getElementById('agentCat');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===parsed.category){sel.selectedIndex=i;break;}}}
+      previewText.textContent=parsed.description||'Description generated.';
+      tagsRow.innerHTML=(parsed.tags||[]).map(t=>`<span class="ai-tag">${t}</span>`).join('');
+    }catch(err){
+      const name=filename.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ');
+      previewText.textContent=`Agent loaded from "${filename}". Edit the description before publishing.`;
+      document.getElementById('agentName').value=name;
+      document.getElementById('agentDesc').value=previewText.textContent;
+      tagsRow.innerHTML='<span class="ai-tag">custom</span>';
+    }
+    btn.disabled=false;
+  }
+  const fd=document.getElementById('fileDrop');
+  fd.addEventListener('dragover',e=>{e.preventDefault();fd.classList.add('drag-over');});
+  fd.addEventListener('dragleave',()=>fd.classList.remove('drag-over'));
+  fd.addEventListener('drop',e=>{
+    e.preventDefault();fd.classList.remove('drag-over');
+    const file=e.dataTransfer.files[0];
+    if(file){document.getElementById('fileInput').files=e.dataTransfer.files;handleFile(document.getElementById('fileInput'));}
+  });
 
   function openModal(id){document.getElementById(id).classList.add('open');document.body.style.overflow='hidden'}
   function closeModal(id){document.getElementById(id).classList.remove('open');document.body.style.overflow=''}
@@ -514,7 +632,6 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
   }
-
   function toggleTheme(){
     const html=document.documentElement;
     const dark=html.getAttribute('data-theme')==='dark';
@@ -523,6 +640,7 @@
     localStorage.setItem('theme',next);
     document.getElementById('themeBtn').textContent=dark?'☀️':'🌙';
   }
+  document.getElementById('themeBtn').textContent=localStorage.getItem('theme')==='light'?'☀️':'🌙';
 
   renderAgents(agents);
   renderTrending();
