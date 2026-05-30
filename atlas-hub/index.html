@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
+<script>
+  (function(){
+    var t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -268,7 +274,9 @@
     </a>
     <div class="nav-right">
       <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">🌙</button>
-      <a class="btn-ghost" href="#browse">Browse</a>
+      <a class="btn-ghost" href="#browse" onclick="document.getElementById('browse').scrollIntoView({behavior:'smooth'})">Browse</a>
+      <a class="btn-ghost" href="collection.html">Collections</a>
+      <a class="btn-ghost" href="user.html">Profile</a>
       <button class="btn-gold" onclick="openModal('uploadModal')">+ Upload agent</button>
     </div>
   </div>
@@ -376,8 +384,11 @@
       <div class="card-foot">
         <div class="tags">${a.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
         <div class="endorses"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>${a.endorsed}</div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <a href="user.html" onclick="event.stopPropagation()" style="font-size:11px;color:var(--text3);text-decoration:none;font-family:'Geist Mono',monospace;transition:color .15s" onmouseover="this.style.color='var(--gold2)'" onmouseout="this.style.color='var(--text3)'">↗ ${a.team||'Anonymous'}</a>
       </div>`;
-      card.onclick=()=>openDetail(a.id);
+      card.onclick=()=>window.location.href='agent.html';
       g.appendChild(card);
     });
   }
@@ -391,7 +402,7 @@
       <span class="trank${t.rank<=3?' gold':''}">${t.rank}</span>
       <div class="tinfo"><div class="tname">${t.name}</div><div class="tteam">${t.team}</div></div>
       <div class="tscore"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>${t.score}</div>`;
-      r.onclick=()=>showToast('Full detail page coming soon!');
+      r.onclick=()=>window.location.href='agent.html';
       l.appendChild(r);
     });
   }
@@ -507,7 +518,9 @@
   function toggleTheme(){
     const html=document.documentElement;
     const dark=html.getAttribute('data-theme')==='dark';
-    html.setAttribute('data-theme',dark?'light':'dark');
+    const next=dark?'light':'dark';
+    html.setAttribute('data-theme',next);
+    localStorage.setItem('theme',next);
     document.getElementById('themeBtn').textContent=dark?'☀️':'🌙';
   }
 

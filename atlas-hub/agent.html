@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<script>
+  (function(){
+    var t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas Hub — Agent Page</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#080808;--bg2:#0f0f0f;--surface:#111111;--surface2:#1a1a1a;--surface3:#222222;
+      --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+      --text:#f5f5f0;--text2:#888880;--text3:#444440;
+      --gold:#C9A84C;--gold2:#e8c56a;--gold3:#f5d98a;
+      --gold-glow:rgba(201,168,76,0.15);--gold-soft:rgba(201,168,76,0.08);
+      --green:#4ade80;--green-soft:rgba(74,222,128,0.08);
+      --red:#f87171;--red-soft:rgba(248,113,113,0.08);
+      --radius:12px;--radius-sm:8px;
+    }
+    [data-theme="light"]{
+      --bg:#fafaf7;--bg2:#f2f2ed;--surface:#ffffff;--surface2:#f5f5f0;--surface3:#ebebE5;
+      --border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.13);
+      --text:#0a0a08;--text2:#666660;--text3:#aaaaA0;
+      --gold-glow:rgba(201,168,76,0.1);--gold-soft:rgba(201,168,76,0.07);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
+    .grid-bg{position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:52px 52px;pointer-events:none;z-index:0}
+
+    /* NAV */
+    nav{position:sticky;top:0;z-index:200;border-bottom:1px solid var(--border);background:rgba(8,8,8,0.88);backdrop-filter:blur(24px);transition:background .3s}
+    [data-theme="light"] nav{background:rgba(250,250,247,0.88)}
+    .nav-inner{max-width:1160px;margin:0 auto;padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+    .logo-mark{width:30px;height:30px;border-radius:8px;border:1px solid rgba(201,168,76,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--gold);box-shadow:0 0 16px var(--gold-glow)}
+    .logo-name{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-.3px}
+    .logo-tag{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:4px}
+    .nav-right{display:flex;align-items:center;gap:10px}
+    .theme-btn{width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s}
+    .theme-btn:hover{background:var(--surface2);color:var(--text)}
+    .btn-ghost{background:none;border:1px solid var(--border);color:var(--text2);padding:7px 16px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .btn-ghost:hover{border-color:var(--border2);color:var(--text);background:var(--surface2)}
+    .btn-gold{background:var(--gold);border:none;color:#0a0a08;padding:7px 18px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px;box-shadow:0 0 20px var(--gold-glow)}
+    .btn-gold:hover{background:var(--gold2);transform:translateY(-1px)}
+    .btn-gold:active{transform:translateY(0)}
+
+    /* LAYOUT */
+    .page{max-width:1160px;margin:0 auto;padding:40px 28px 100px;position:relative;z-index:1;display:grid;grid-template-columns:1fr 340px;gap:32px}
+    @media(max-width:900px){.page{grid-template-columns:1fr}}
+
+    /* LEFT COLUMN */
+    .breadcrumb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);margin-bottom:24px;font-family:'Geist Mono',monospace}
+    .breadcrumb a{color:var(--text3);text-decoration:none;transition:color .15s}
+    .breadcrumb a:hover{color:var(--gold)}
+    .breadcrumb span{color:var(--text3)}
+
+    .agent-header{margin-bottom:28px}
+    .agent-icon-row{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+    .agent-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.15);flex-shrink:0}
+    .agent-title{font-size:28px;font-weight:600;letter-spacing:-.8px;color:var(--text);line-height:1.15}
+    .agent-title em{font-family:'Instrument Serif',serif;font-style:italic;color:var(--gold2)}
+
+    .tags-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:20px}
+    .tag{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3);background:var(--surface2);padding:3px 9px;border-radius:5px;border:1px solid var(--border)}
+    .tag.cat{color:var(--gold2);background:var(--gold-soft);border-color:rgba(201,168,76,0.2)}
+
+    .uploader-row{display:flex;align-items:center;gap:10px;margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid var(--border)}
+    .uploader-av{width:32px;height:32px;border-radius:50%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--gold2);flex-shrink:0}
+    .uploader-name{font-size:13px;font-weight:500;color:var(--text);cursor:pointer;text-decoration:none}
+    .uploader-name:hover{color:var(--gold2)}
+    .uploader-date{font-size:11px;color:var(--text3);margin-top:1px}
+
+    /* SECTIONS */
+    .section{margin-bottom:32px}
+    .section-label{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+    .section-text{font-size:14px;color:var(--text2);line-height:1.7}
+    .constraints-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+    .constraint-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+    .constraint-row:last-child{border-bottom:none;padding-bottom:0}
+    .constraint-row:first-child{padding-top:0}
+    .constraint-key{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3);width:110px;flex-shrink:0;padding-top:1px}
+    .constraint-val{font-size:13px;color:var(--text2);line-height:1.5}
+    .warning-val{color:var(--red);font-size:13px;line-height:1.5}
+
+    /* DOWNLOAD */
+    .download-card{background:var(--surface);border:1px solid rgba(201,168,76,0.15);border-radius:var(--radius);padding:20px;margin-bottom:32px;position:relative;overflow:hidden}
+    .download-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+    .download-title{font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px}
+    .download-sub{font-size:12px;color:var(--text3);margin-bottom:16px}
+    .download-btn{width:100%;background:var(--gold);color:#0a0a08;border:none;padding:11px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px}
+    .download-btn:hover{background:var(--gold2);box-shadow:0 0 24px var(--gold-glow)}
+    .download-btn:active{transform:scale(.99)}
+    .download-meta{display:flex;gap:16px;margin-top:12px}
+    .dmeta{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3)}
+    .dmeta span{color:var(--text2)}
+
+    /* DIVIDER */
+    .divider{border:none;border-top:1px solid var(--border);margin:0 0 32px}
+
+    /* REVIEWS */
+    .reviews-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    .reviews-title{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase}
+    .review-count{font-size:12px;color:var(--text3);font-family:'Geist Mono',monospace}
+
+    .review-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px}
+    .review-form-title{font-size:13px;font-weight:500;color:var(--text);margin-bottom:14px}
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px}
+    .field input,.field textarea{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 13px;font-size:13px;color:var(--text);font-family:'Geist',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
+    .field input:focus,.field textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+    .field textarea{resize:vertical;min-height:72px;line-height:1.5}
+    .submit-review-btn{background:none;border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:9px 20px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s}
+    .submit-review-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
+
+    .review-list{display:flex;flex-direction:column;gap:14px}
+    .review-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+    .review-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+    .review-title-text{font-size:14px;font-weight:500;color:var(--text);letter-spacing:-.2px}
+    .vote-row{display:flex;align-items:center;gap:6px}
+    .vote-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:4px;font-family:'Geist',sans-serif;color:var(--text2)}
+    .vote-btn:hover{border-color:var(--border2);color:var(--text)}
+    .vote-btn.up:hover{border-color:rgba(74,222,128,0.4);color:var(--green);background:var(--green-soft)}
+    .vote-btn.down:hover{border-color:rgba(248,113,113,0.4);color:var(--red);background:var(--red-soft)}
+    .vote-btn.voted-up{border-color:rgba(74,222,128,0.4);color:var(--green);background:var(--green-soft)}
+    .vote-btn.voted-down{border-color:rgba(248,113,113,0.4);color:var(--red);background:var(--red-soft)}
+    .review-desc{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px}
+    .review-constraints{background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--text3);line-height:1.5;font-family:'Geist Mono',monospace;border:1px solid var(--border)}
+    .review-meta{display:flex;align-items:center;gap:10px;margin-top:12px}
+    .review-av{width:22px;height:22px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:var(--text2)}
+    .review-author{font-size:11px;color:var(--text3)}
+
+    /* RIGHT SIDEBAR */
+    .sidebar{}
+    .sidebar-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px}
+    .sidebar-card-title{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:14px}
+    .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .sstat{text-align:center;padding:12px;background:var(--surface2);border-radius:var(--radius-sm)}
+    .sstat-n{font-size:20px;font-weight:600;color:var(--gold);letter-spacing:-.5px}
+    .sstat-l{font-size:10px;color:var(--text3);margin-top:2px;font-family:'Geist Mono',monospace}
+    .related-list{display:flex;flex-direction:column;gap:8px}
+    .related-row{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);cursor:pointer;transition:background .15s;text-decoration:none}
+    .related-row:hover{background:var(--surface3)}
+    .related-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;background:rgba(201,168,76,0.08);flex-shrink:0}
+    .related-name{font-size:12px;font-weight:500;color:var(--text)}
+    .related-cat{font-size:10px;color:var(--text3);margin-top:1px}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:28px;right:28px;background:var(--surface);border:1px solid rgba(201,168,76,0.3);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);z-index:900;transform:translateY(80px);opacity:0;transition:all .3s;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+    .toast.show{transform:translateY(0);opacity:1}
+  </style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="toast" id="toast"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a class="logo" href="index.html">
+      <div class="logo-mark">◈</div>
+      <span class="logo-name">Atlas Hub</span>
+      <span class="logo-tag">agent registry</span>
+    </a>
+    <div class="nav-right">
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
+      <a class="btn-ghost" href="index.html">← Back to registry</a>
+      <a class="btn-gold" href="index.html">+ Upload agent</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page">
+  <!-- LEFT: MAIN CONTENT -->
+  <div>
+    <div class="breadcrumb">
+      <a href="index.html">Atlas Hub</a>
+      <span>/</span>
+      <a href="index.html">HR &amp; recruiting</a>
+      <span>/</span>
+      <span style="color:var(--text2)">CV Screener</span>
+    </div>
+
+    <div class="agent-header">
+      <div class="agent-icon-row">
+        <div class="agent-icon">👤</div>
+        <div>
+          <div class="agent-title">CV <em>Screener</em></div>
+        </div>
+      </div>
+
+      <div class="tags-row">
+        <span class="tag cat">HR &amp; recruiting</span>
+        <span class="tag">GPT-4o</span>
+        <span class="tag">CSV output</span>
+        <span class="tag">ATS compatible</span>
+        <span class="tag">batch processing</span>
+      </div>
+
+      <div class="uploader-row">
+        <div class="uploader-av">SA</div>
+        <div>
+          <a class="uploader-name" href="user.html">Samir A.</a>
+          <div class="uploader-date">Uploaded 12 May 2025 · People Ops @ Acme</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DESCRIPTION -->
+    <div class="section">
+      <div class="section-label">Description</div>
+      <div class="section-text">
+        Ranks applicants against a job description using structured criteria. The agent parses each CV, scores it across required skills, experience level, and role alignment, then outputs a ranked shortlist as a CSV file. Flags mismatches with a reason column so reviewers can quickly audit decisions. Designed for high-volume screening where you need a first-pass filter before human review.
+      </div>
+    </div>
+
+    <!-- CONSTRAINTS -->
+    <div class="section">
+      <div class="section-label">Constraints</div>
+      <div class="constraints-box">
+        <div class="constraint-row">
+          <div class="constraint-key">Input format</div>
+          <div class="constraint-val">PDF or plain-text CVs only. Does not process scanned images or LinkedIn exports.</div>
+        </div>
+        <div class="constraint-row">
+          <div class="constraint-key">Batch size</div>
+          <div class="constraint-val">Tested up to 200 CVs per run. Performance degrades above 500.</div>
+        </div>
+        <div class="constraint-row">
+          <div class="constraint-key">When to use</div>
+          <div class="constraint-val">Screening more than 20 applicants for a structured role with clear criteria.</div>
+        </div>
+        <div class="constraint-row">
+          <div class="constraint-key">When NOT to use</div>
+          <div class="warning-val">⚠ Roles requiring portfolio review, creative assessment, or senior leadership judgment. Do not use as the sole decision tool.</div>
+        </div>
+        <div class="constraint-row">
+          <div class="constraint-key">Model required</div>
+          <div class="constraint-val">GPT-4o (function calling enabled). Will not run on GPT-3.5.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOWNLOAD -->
+    <div class="download-card">
+      <div class="download-title">Download this agent</div>
+      <div class="download-sub">Includes prompt file, config JSON, and a README with setup instructions.</div>
+      <button class="download-btn" onclick="handleDownload()">
+        ↓ Download agent package
+      </button>
+      <div class="download-meta">
+        <div class="dmeta">Version <span>v2.1.0</span></div>
+        <div class="dmeta">Size <span>14 KB</span></div>
+        <div class="dmeta">Downloads <span id="dlCount">312</span></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- REVIEWS -->
+    <div>
+      <div class="reviews-header">
+        <div class="reviews-title">Reviews</div>
+        <div class="review-count" id="reviewCount">3 reviews</div>
+      </div>
+
+      <!-- WRITE REVIEW -->
+      <div class="review-form">
+        <div class="review-form-title">Write a review</div>
+        <div class="field"><label>Review title</label><input type="text" id="rTitle" placeholder="e.g. Saved us 4 hours per hiring round"></div>
+        <div class="field"><label>Your experience</label><textarea id="rDesc" placeholder="Describe how you used this agent, what worked, what didn't…"></textarea></div>
+        <div class="field"><label>Potential downsides</label><input type="text" id="rConstraints" placeholder="e.g. Struggled with non-English CVs"></div>
+        <button class="submit-review-btn" onclick="submitReview()">Post review →</button>
+      </div>
+
+      <!-- REVIEW LIST -->
+      <div class="review-list" id="reviewList"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-card">
+      <div class="sidebar-card-title">Stats</div>
+      <div class="stat-grid">
+        <div class="sstat"><div class="sstat-n">42</div><div class="sstat-l">ENDORSEMENTS</div></div>
+        <div class="sstat"><div class="sstat-n" id="sidebarDl">312</div><div class="sstat-l">DOWNLOADS</div></div>
+        <div class="sstat"><div class="sstat-n">4.7</div><div class="sstat-l">AVG RATING</div></div>
+        <div class="sstat"><div class="sstat-n" id="sidebarRev">3</div><div class="sstat-l">REVIEWS</div></div>
+      </div>
+    </div>
+
+    <div class="sidebar-card">
+      <div class="sidebar-card-title">Uploaded by</div>
+      <a href="user.html" style="display:flex;align-items:center;gap:10px;text-decoration:none;padding:4px 0">
+        <div style="width:38px;height:38px;border-radius:50%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--gold2)">SA</div>
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--text)">Samir A.</div>
+          <div style="font-size:11px;color:var(--text3)">People Ops @ Acme · 6 agents</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="sidebar-card">
+      <div class="sidebar-card-title">Related agents</div>
+      <div class="related-list">
+        <a class="related-row" href="agent.html">
+          <div class="related-icon">📋</div>
+          <div><div class="related-name">JD writer</div><div class="related-cat">HR &amp; recruiting</div></div>
+        </a>
+        <a class="related-row" href="agent.html">
+          <div class="related-icon">📅</div>
+          <div><div class="related-name">Interview scheduler</div><div class="related-cat">HR &amp; recruiting</div></div>
+        </a>
+        <a class="related-row" href="agent.html">
+          <div class="related-icon">📝</div>
+          <div><div class="related-name">Onboarding guide writer</div><div class="related-cat">HR &amp; recruiting</div></div>
+        </a>
+      </div>
+    </div>
+
+    <div class="sidebar-card">
+      <div class="sidebar-card-title">Part of collections</div>
+      <a href="collection.html" style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface2);border-radius:var(--radius-sm);text-decoration:none;transition:background .15s" onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background='var(--surface2)'">
+        <div style="font-size:18px">📁</div>
+        <div>
+          <div style="font-size:12px;font-weight:500;color:var(--text)">HR Automation Toolkit</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">8 agents · by Samir A.</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  let reviews=[
+    {id:1,title:"Cut our screening time by 60%",desc:"We ran this on 180 applicants for a sales role. The ranking was surprisingly accurate — the top 10 matched what our team would have picked manually. Saved us almost a full day of work.",constraints:"Didn't handle candidates with non-standard CV formats well. Recommend normalizing to PDF first.",author:"JM",authorName:"Jamie M. · Talent @ Klarna",up:18,down:1,voted:null},
+    {id:2,title:"Solid but needs a good JD",desc:"The quality of output is directly proportional to how well-written your job description is. When we gave it a vague JD, the ranking was mediocre. With a structured JD it was excellent.",constraints:"Works best with JDs that have explicit required vs. nice-to-have skills listed.",author:"RP",authorName:"Rania P. · HR @ N26",up:12,down:0,voted:null},
+    {id:3,title:"Don't use for senior roles",desc:"Tried this for a Head of Engineering search. It ranked candidates with the most keywords highest, which isn't how you evaluate senior hires. For junior/mid roles it's great though.",constraints:"Not suitable for roles where cultural fit or leadership style matters more than technical criteria.",author:"TK",authorName:"Tom K. · Eng @ Celonis",up:9,down:2,voted:null},
+  ];
+
+  function renderReviews(){
+    const list=document.getElementById('reviewList');
+    list.innerHTML='';
+    reviews.forEach(r=>{
+      const div=document.createElement('div');
+      div.className='review-card';
+      div.innerHTML=`
+      <div class="review-card-top">
+        <div class="review-title-text">${r.title}</div>
+        <div class="vote-row">
+          <button class="vote-btn up ${r.voted==='up'?'voted-up':''}" onclick="vote(${r.id},'up')">▲ <span id="up-${r.id}">${r.up}</span></button>
+          <button class="vote-btn down ${r.voted==='down'?'voted-down':''}" onclick="vote(${r.id},'down')">▼ <span id="dn-${r.id}">${r.down}</span></button>
+        </div>
+      </div>
+      <div class="review-desc">${r.desc}</div>
+      <div class="review-constraints">⚠ ${r.constraints}</div>
+      <div class="review-meta">
+        <div class="review-av">${r.author}</div>
+        <span class="review-author">${r.authorName}</span>
+      </div>`;
+      list.appendChild(div);
+    });
+    document.getElementById('reviewCount').textContent=reviews.length+' reviews';
+    document.getElementById('sidebarRev').textContent=reviews.length;
+  }
+
+  function vote(id,dir){
+    const r=reviews.find(x=>x.id===id);
+    if(!r) return;
+    if(r.voted===dir){showToast('Already voted.');return;}
+    if(r.voted&&r.voted!==dir){
+      if(r.voted==='up') r.up--; else r.down--;
+    }
+    if(dir==='up') r.up++; else r.down++;
+    r.voted=dir;
+    renderReviews();
+    document.getElementById("themeBtn").textContent = localStorage.getItem("theme")==="light" ? "☀️" : "🌙";
+    showToast(dir==='up'?'Upvoted!':'Downvoted.');
+  }
+
+  function submitReview(){
+    const title=document.getElementById('rTitle').value.trim();
+    const desc=document.getElementById('rDesc').value.trim();
+    const constraints=document.getElementById('rConstraints').value.trim();
+    if(!title||!desc){showToast('Please add a title and description.');return;}
+    reviews.unshift({id:Date.now(),title,desc,constraints:constraints||'No specific constraints noted.',author:'ME',authorName:'You · just now',up:0,down:0,voted:null});
+    ['rTitle','rDesc','rConstraints'].forEach(id=>document.getElementById(id).value='');
+    renderReviews();
+    document.getElementById("themeBtn").textContent = localStorage.getItem("theme")==="light" ? "☀️" : "🌙";
+    showToast('Review posted!');
+  }
+
+  function handleDownload(){
+    const c=document.getElementById('dlCount');
+    const s=document.getElementById('sidebarDl');
+    const n=parseInt(c.textContent)+1;
+    c.textContent=n; s.textContent=n;
+    showToast('Download started!');
+  }
+
+  let toastTimer;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+  }
+
+  function toggleTheme(){localStorage.setItem("theme", document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark");
+    const html=document.documentElement;
+    const dark=html.getAttribute('data-theme')==='dark';
+    html.setAttribute('data-theme',dark?'light':'dark');
+    document.getElementById('themeBtn').textContent=dark?'☀️':'🌙';
+  }
+
+  renderReviews();
+  document.getElementById("themeBtn").textContent = localStorage.getItem("theme")==="light" ? "☀️" : "🌙";
+</script>
+</body>
+</html>

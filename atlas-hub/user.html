@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<script>
+  (function(){
+    var t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas Hub — User Page</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#080808;--bg2:#0f0f0f;--surface:#111111;--surface2:#1a1a1a;--surface3:#222222;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);--text:#f5f5f0;--text2:#888880;--text3:#444440;--gold:#C9A84C;--gold2:#e8c56a;--gold3:#f5d98a;--gold-glow:rgba(201,168,76,0.15);--gold-soft:rgba(201,168,76,0.08);--green:#4ade80;--green-soft:rgba(74,222,128,0.08);--radius:12px;--radius-sm:8px;}
+    [data-theme="light"]{--bg:#fafaf7;--bg2:#f2f2ed;--surface:#ffffff;--surface2:#f5f5f0;--surface3:#ebebE5;--border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.13);--text:#0a0a08;--text2:#666660;--text3:#aaaaA0;--gold-glow:rgba(201,168,76,0.1);--gold-soft:rgba(201,168,76,0.07);}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .3s,color .3s}
+    .grid-bg{position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:52px 52px;pointer-events:none;z-index:0}
+    nav{position:sticky;top:0;z-index:200;border-bottom:1px solid var(--border);background:rgba(8,8,8,0.88);backdrop-filter:blur(24px);transition:background .3s}
+    [data-theme="light"] nav{background:rgba(250,250,247,0.88)}
+    .nav-inner{max-width:1160px;margin:0 auto;padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+    .logo-mark{width:30px;height:30px;border-radius:8px;border:1px solid rgba(201,168,76,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--gold);box-shadow:0 0 16px var(--gold-glow)}
+    .logo-name{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-.3px}
+    .logo-tag{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:4px}
+    .nav-right{display:flex;align-items:center;gap:10px}
+    .theme-btn{width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s}
+    .theme-btn:hover{background:var(--surface2);color:var(--text)}
+    .btn-ghost{background:none;border:1px solid var(--border);color:var(--text2);padding:7px 16px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .btn-ghost:hover{border-color:var(--border2);color:var(--text);background:var(--surface2)}
+    .btn-gold{background:var(--gold);border:none;color:#0a0a08;padding:7px 18px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px;box-shadow:0 0 20px var(--gold-glow)}
+    .btn-gold:hover{background:var(--gold2);transform:translateY(-1px)}
+
+    .page{max-width:1160px;margin:0 auto;padding:40px 28px 100px;position:relative;z-index:1}
+
+    /* PROFILE HEADER */
+    .profile-header{display:flex;align-items:flex-start;gap:24px;padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:16px;margin-bottom:28px;position:relative;overflow:hidden}
+    .profile-header::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+    .profile-avatar{width:72px;height:72px;border-radius:50%;background:rgba(201,168,76,0.15);border:2px solid rgba(201,168,76,0.25);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600;color:var(--gold2);flex-shrink:0}
+    .profile-info{flex:1}
+    .profile-name{font-size:24px;font-weight:600;letter-spacing:-.6px;color:var(--text);margin-bottom:6px}
+    .profile-desc{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:14px;max-width:540px}
+    .profile-meta{display:flex;flex-wrap:wrap;gap:16px}
+    .pmeta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);font-family:'Geist Mono',monospace}
+    .pmeta a{color:var(--gold2);text-decoration:none}
+    .pmeta a:hover{text-decoration:underline}
+    .profile-stats{display:flex;gap:10px;flex-direction:column;align-items:flex-end}
+    .pstat{text-align:center;padding:12px 20px;background:var(--surface2);border-radius:var(--radius-sm)}
+    .pstat-n{font-size:20px;font-weight:600;color:var(--gold);letter-spacing:-.5px}
+    .pstat-l{font-size:10px;color:var(--text3);font-family:'Geist Mono',monospace}
+
+    /* TABS */
+    .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:28px}
+    .tab{background:none;border:none;border-bottom:2px solid transparent;padding:12px 20px;font-size:13px;font-family:'Geist',sans-serif;font-weight:500;color:var(--text3);cursor:pointer;transition:all .15s;margin-bottom:-1px}
+    .tab:hover{color:var(--text2)}
+    .tab.active{color:var(--gold2);border-bottom-color:var(--gold)}
+
+    /* AGENT GRID */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:border-color .2s,transform .2s,box-shadow .2s;text-decoration:none;display:block;position:relative;overflow:hidden}
+    .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .3s}
+    .card:hover{border-color:rgba(201,168,76,0.25);transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+    .card:hover::before{opacity:1}
+    .card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
+    .ci{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px}
+    .ci.pu{background:rgba(123,104,238,0.12)}.ci.te{background:rgba(74,222,128,0.1)}.ci.co{background:rgba(248,113,113,0.1)}.ci.bl{background:rgba(96,165,250,0.1)}.ci.am{background:rgba(201,168,76,0.1)}.ci.pk{background:rgba(244,114,182,0.1)}
+    .bdg{font-size:10px;font-family:'Geist Mono',monospace;padding:3px 8px;border-radius:5px;font-weight:500}
+    .bdg-pop{background:var(--gold-soft);color:var(--gold2);border:1px solid rgba(201,168,76,0.2)}
+    .bdg-new{background:var(--green-soft);color:var(--green);border:1px solid rgba(74,222,128,0.2)}
+    .card-name{font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px;letter-spacing:-.2px}
+    .card-desc{font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:16px}
+    .card-foot{display:flex;align-items:center;justify-content:space-between}
+    .tags{display:flex;gap:5px;flex-wrap:wrap}
+    .tag{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);background:var(--surface2);padding:2px 7px;border-radius:4px;border:1px solid var(--border)}
+    .endorses{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text3)}
+
+    /* COLLECTION LIST */
+    .coll-list{display:flex;flex-direction:column;gap:12px}
+    .coll-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:border-color .2s;text-decoration:none;display:flex;align-items:center;gap:16px}
+    .coll-card:hover{border-color:rgba(201,168,76,0.25)}
+    .coll-icon{width:48px;height:48px;border-radius:12px;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.1);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+    .coll-info{flex:1}
+    .coll-name{font-size:15px;font-weight:500;color:var(--text);margin-bottom:4px;letter-spacing:-.3px}
+    .coll-desc{font-size:12px;color:var(--text2);line-height:1.5}
+    .coll-meta{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3);margin-top:6px}
+    .coll-arrow{color:var(--text3);font-size:16px}
+
+    .empty{text-align:center;padding:48px;color:var(--text3);font-size:13px}
+    .toast{position:fixed;bottom:28px;right:28px;background:var(--surface);border:1px solid rgba(201,168,76,0.3);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);z-index:900;transform:translateY(80px);opacity:0;transition:all .3s;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+    .toast.show{transform:translateY(0);opacity:1}
+  </style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="toast" id="toast"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a class="logo" href="index.html">
+      <div class="logo-mark">◈</div>
+      <span class="logo-name">Atlas Hub</span>
+      <span class="logo-tag">agent registry</span>
+    </a>
+    <div class="nav-right">
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
+      <a class="btn-ghost" href="index.html">← Registry</a>
+      <a class="btn-gold" href="index.html">+ Upload agent</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page">
+  <!-- PROFILE HEADER -->
+  <div class="profile-header">
+    <div class="profile-avatar">SA</div>
+    <div class="profile-info">
+      <div class="profile-name">Samir A.</div>
+      <div class="profile-desc">Building automation workflows for People Ops and Finance teams. Focused on agents that reduce repetitive review work and improve decision quality at scale.</div>
+      <div class="profile-meta">
+        <span class="pmeta">📅 Joined May 2025</span>
+        <span class="pmeta">🏢 People Ops @ Acme</span>
+        <span class="pmeta">✉ <a href="mailto:samir@acme.com">samir@acme.com</a></span>
+        <span class="pmeta">🔗 <a href="#">linkedin.com/in/samira</a></span>
+      </div>
+    </div>
+    <div class="profile-stats">
+      <div class="pstat"><div class="pstat-n">6</div><div class="pstat-l">AGENTS</div></div>
+      <div class="pstat"><div class="pstat-n">142</div><div class="pstat-l">ENDORSEMENTS</div></div>
+      <div class="pstat"><div class="pstat-n">2</div><div class="pstat-l">COLLECTIONS</div></div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('agents', this)">Agents (6)</button>
+    <button class="tab" onclick="switchTab('collections', this)">Collections (2)</button>
+  </div>
+
+  <!-- AGENTS TAB -->
+  <div id="tab-agents">
+    <div class="grid" id="agentGrid"></div>
+  </div>
+
+  <!-- COLLECTIONS TAB -->
+  <div id="tab-collections" style="display:none">
+    <div class="coll-list" id="collList"></div>
+  </div>
+</div>
+
+<script>
+  const agents=[
+    {id:1,name:"CV screener",desc:"Ranks applicants against JD criteria, flags mismatches, outputs a shortlist CSV.",icon:"👤",ci:"pu",tags:["HR","GPT-4o"],endorsed:42,badge:"pop"},
+    {id:2,name:"JD writer",desc:"Generates structured job descriptions from a role brief and team context.",icon:"📋",ci:"te",tags:["HR","Claude"],endorsed:28,badge:null},
+    {id:3,name:"Offer letter generator",desc:"Drafts personalized offer letters from a template and candidate data.",icon:"📄",ci:"bl",tags:["HR","Docs"],endorsed:19,badge:null},
+    {id:4,name:"Budget variance explainer",desc:"Explains month-over-month budget variances in plain language for stakeholders.",icon:"📊",ci:"am",tags:["Finance","GPT-4o"],endorsed:31,badge:"pop"},
+    {id:5,name:"Onboarding guide writer",desc:"Creates role-specific onboarding docs from team context and role brief.",icon:"🗂️",ci:"pk",tags:["HR","Claude"],endorsed:14,badge:"new"},
+    {id:6,name:"Contract summarizer",desc:"Extracts key clauses, deadlines, and obligations from legal docs into a brief.",icon:"⚖️",ci:"co",tags:["Docs","Legal"],endorsed:8,badge:"new"},
+  ];
+
+  const collections=[
+    {id:1,icon:"📁",name:"HR Automation Toolkit",desc:"A complete set of agents for the full hiring cycle — from JD creation to offer letters.",agents:4,updated:"Updated 3 days ago"},
+    {id:2,icon:"💼",name:"Finance Ops Bundle",desc:"Agents for variance reporting, budget summaries, and earnings call analysis.",agents:2,updated:"Updated 1 week ago"},
+  ];
+
+  function renderAgents(){
+    const g=document.getElementById('agentGrid');
+    g.innerHTML='';
+    agents.forEach(a=>{
+      const b=a.badge?`<span class="bdg ${a.badge==='new'?'bdg-new':'bdg-pop'}">${a.badge}</span>`:'';
+      const card=document.createElement('a');
+      card.className='card';card.href='agent.html';
+      card.innerHTML=`
+      <div class="card-head"><div class="ci ${a.ci}">${a.icon}</div>${b}</div>
+      <div class="card-name">${a.name}</div>
+      <div class="card-desc">${a.desc}</div>
+      <div class="card-foot">
+        <div class="tags">${a.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+        <div class="endorses"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>${a.endorsed}</div>
+      </div>`;
+      g.appendChild(card);
+    });
+  }
+
+  function renderCollections(){
+    const l=document.getElementById('collList');
+    l.innerHTML='';
+    collections.forEach(c=>{
+      const div=document.createElement('a');
+      div.className='coll-card';div.href='collection.html';
+      div.innerHTML=`
+      <div class="coll-icon">${c.icon}</div>
+      <div class="coll-info">
+        <div class="coll-name">${c.name}</div>
+        <div class="coll-desc">${c.desc}</div>
+        <div class="coll-meta">${c.agents} agents · ${c.updated}</div>
+      </div>
+      <div class="coll-arrow">→</div>`;
+      l.appendChild(div);
+    });
+  }
+
+  function switchTab(tab, el){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-agents').style.display=tab==='agents'?'block':'none';
+    document.getElementById('tab-collections').style.display=tab==='collections'?'block':'none';
+  }
+
+  let toastTimer;
+  function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600)}
+  function toggleTheme(){const html=document.documentElement;const dark=html.getAttribute('data-theme')==='dark';html.setAttribute('data-theme',dark?'light':'dark');document.getElementById('themeBtn').textContent=dark?'☀️':'🌙'}
+
+  renderAgents();
+  document.getElementById("themeBtn").textContent = localStorage.getItem("theme")==="light" ? "☀️" : "🌙";
+  renderCollections();
+  document.getElementById("themeBtn").textContent = localStorage.getItem("theme")==="light" ? "☀️" : "🌙";
+</script>
+</body>
+</html>
