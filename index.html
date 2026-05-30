@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas Hub — Registry</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080808;
+      --bg2: #0f0f0f;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --surface3: #222222;
+      --border: rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.13);
+      --text: #f5f5f0;
+      --text2: #888880;
+      --text3: #444440;
+      --gold: #C9A84C;
+      --gold2: #e8c56a;
+      --gold3: #f5d98a;
+      --gold-glow: rgba(201,168,76,0.15);
+      --gold-soft: rgba(201,168,76,0.08);
+      --green: #4ade80;
+      --green-soft: rgba(74,222,128,0.08);
+      --red-soft: rgba(248,113,113,0.08);
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    [data-theme="light"] {
+      --bg: #fafaf7;
+      --bg2: #f2f2ed;
+      --surface: #ffffff;
+      --surface2: #f5f5f0;
+      --surface3: #ebebE5;
+      --border: rgba(0,0,0,0.07);
+      --border2: rgba(0,0,0,0.13);
+      --text: #0a0a08;
+      --text2: #666660;
+      --text3: #aaaaA0;
+      --gold-glow: rgba(201,168,76,0.1);
+      --gold-soft: rgba(201,168,76,0.07);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;transition:background .3s,color .3s}
+
+    /* subtle noise texture overlay */
+    body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.4}
+
+    /* grid lines */
+    .grid-bg{position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:52px 52px;pointer-events:none;z-index:0}
+    [data-theme="dark"] .grid-bg::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% -5%,rgba(201,168,76,0.07) 0%,transparent 65%)}
+
+    /* NAV */
+    nav{position:sticky;top:0;z-index:200;border-bottom:1px solid var(--border);background:rgba(8,8,8,0.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);transition:background .3s}
+    [data-theme="light"] nav{background:rgba(250,250,247,0.88)}
+    .nav-inner{max-width:1160px;margin:0 auto;padding:0 28px;height:58px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+    .logo-mark{width:30px;height:30px;border-radius:8px;border:1px solid rgba(201,168,76,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--gold);box-shadow:0 0 16px var(--gold-glow)}
+    .logo-name{font-size:14px;font-weight:600;color:var(--text);letter-spacing:-.3px}
+    .logo-tag{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:2px 8px;border-radius:4px}
+    .nav-right{display:flex;align-items:center;gap:10px}
+    .theme-btn{width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s}
+    .theme-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--border2)}
+    .btn-ghost{background:none;border:1px solid var(--border);color:var(--text2);padding:7px 16px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .btn-ghost:hover{border-color:var(--border2);color:var(--text);background:var(--surface2)}
+    .btn-gold{background:var(--gold);border:none;color:#0a0a08;padding:7px 18px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:6px;box-shadow:0 0 20px var(--gold-glow)}
+    .btn-gold:hover{background:var(--gold2);box-shadow:0 0 32px var(--gold-glow);transform:translateY(-1px)}
+    .btn-gold:active{transform:translateY(0);opacity:.9}
+
+    /* HERO */
+    .hero{max-width:1160px;margin:0 auto;padding:88px 28px 64px;text-align:center;position:relative;z-index:1}
+    .hero-pill{display:inline-flex;align-items:center;gap:8px;font-family:'Geist Mono',monospace;font-size:11px;color:var(--gold);background:var(--gold-soft);border:1px solid rgba(201,168,76,0.2);padding:5px 14px;border-radius:20px;margin-bottom:28px;letter-spacing:.3px}
+    .hero-pill-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px var(--gold);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .hero h1{font-size:54px;font-weight:600;letter-spacing:-2px;line-height:1.08;margin-bottom:20px}
+    .hero h1 em{font-family:'Instrument Serif',serif;font-style:italic;background:linear-gradient(135deg,var(--gold),var(--gold3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .hero-sub{font-size:16px;color:var(--text2);max-width:440px;margin:0 auto 36px;line-height:1.65}
+    .hero-cta{display:flex;align-items:center;justify-content:center;gap:12px}
+
+    /* STATS */
+    .stats-bar{position:relative;z-index:1;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+    .stats-inner{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border)}
+    .stat{background:var(--bg);padding:22px 28px;text-align:center;transition:background .15s;cursor:default}
+    .stat:hover{background:var(--surface)}
+    .stat-n{font-size:26px;font-weight:600;letter-spacing:-1px;color:var(--gold)}
+    .stat-l{font-size:11px;color:var(--text3);margin-top:3px;font-family:'Geist Mono',monospace;letter-spacing:.3px}
+
+    /* MAIN */
+    .main{max-width:1160px;margin:0 auto;padding:48px 28px 100px;position:relative;z-index:1}
+
+    /* SEARCH */
+    .search-box{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:13px 18px;margin-bottom:16px;transition:border-color .2s,box-shadow .2s}
+    .search-box:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+    .search-box svg{flex-shrink:0;color:var(--text3)}
+    .search-box input{flex:1;background:none;border:none;outline:none;font-size:14px;color:var(--text);font-family:'Geist',sans-serif}
+    .search-box input::placeholder{color:var(--text3)}
+    .kbd{font-family:'Geist Mono',monospace;font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);padding:3px 7px;border-radius:5px}
+
+    /* CHIPS */
+    .chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:40px}
+    .chip{background:none;border:1px solid var(--border);color:var(--text2);padding:5px 16px;border-radius:20px;font-size:12px;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s;white-space:nowrap}
+    .chip:hover{border-color:rgba(201,168,76,0.3);color:var(--text)}
+    .chip.on{background:var(--gold-soft);border-color:rgba(201,168,76,0.35);color:var(--gold2)}
+
+    /* SECTION */
+    .sec{margin-bottom:52px}
+    .sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .sec-title{font-size:10px;font-weight:500;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase}
+    .see-all-btn{font-size:12px;color:var(--gold);background:none;border:none;cursor:pointer;font-family:'Geist',sans-serif;transition:color .15s}
+    .see-all-btn:hover{color:var(--gold2)}
+
+    /* CARDS */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:border-color .2s,transform .2s,box-shadow .2s;text-decoration:none;display:block;position:relative;overflow:hidden}
+    .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .3s}
+    .card:hover{border-color:rgba(201,168,76,0.25);transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.4)}
+    .card:hover::before{opacity:1}
+    .card.top{border-color:rgba(201,168,76,0.12)}
+    .card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
+    .ci{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px}
+    .ci.pu{background:rgba(167,139,250,0.1)}
+    .ci.te{background:rgba(74,222,128,0.08)}
+    .ci.co{background:rgba(248,113,113,0.08)}
+    .ci.bl{background:rgba(96,165,250,0.08)}
+    .ci.am{background:rgba(201,168,76,0.1)}
+    .ci.pk{background:rgba(244,114,182,0.08)}
+    .bdg{font-size:10px;font-family:'Geist Mono',monospace;padding:3px 8px;border-radius:5px;font-weight:500}
+    .bdg-pop{background:var(--gold-soft);color:var(--gold2);border:1px solid rgba(201,168,76,0.2)}
+    .bdg-new{background:var(--green-soft);color:var(--green);border:1px solid rgba(74,222,128,0.2)}
+    .card-name{font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px;letter-spacing:-.2px}
+    .card-desc{font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:16px}
+    .card-foot{display:flex;align-items:center;justify-content:space-between}
+    .tags{display:flex;gap:5px;flex-wrap:wrap}
+    .tag{font-size:10px;font-family:'Geist Mono',monospace;color:var(--text3);background:var(--surface2);padding:2px 7px;border-radius:4px;border:1px solid var(--border)}
+    .endorses{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text3)}
+
+    /* TRENDING */
+    .trend-list{display:flex;flex-direction:column;gap:6px}
+    .trow{display:flex;align-items:center;gap:16px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all .15s;text-decoration:none}
+    .trow:hover{border-color:rgba(201,168,76,0.25);background:var(--surface2)}
+    .trow:active{transform:scale(0.99)}
+    .trank{font-family:'Geist Mono',monospace;font-size:11px;color:var(--text3);width:16px;text-align:center;flex-shrink:0}
+    .trank.gold{color:var(--gold)}
+    .tinfo{flex:1}
+    .tname{font-size:13px;font-weight:500;color:var(--text)}
+    .tteam{font-size:11px;color:var(--text3);margin-top:1px}
+    .tscore{display:flex;align-items:center;gap:5px;font-family:'Geist Mono',monospace;font-size:12px;color:var(--text2)}
+
+    /* ENDORSEMENTS */
+    .egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+    .ecard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+    .ecard-quote{font-size:13px;color:var(--text2);line-height:1.6;font-style:italic;margin-bottom:12px;border-left:2px solid rgba(201,168,76,0.3);padding-left:12px}
+    .eby{display:flex;align-items:center;gap:8px}
+    .av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;flex-shrink:0}
+    .av-a{background:rgba(201,168,76,0.15);color:var(--gold2)}
+    .av-b{background:rgba(74,222,128,0.12);color:var(--green)}
+    .av-c{background:rgba(167,139,250,0.12);color:#a78bfa}
+    .av-d{background:rgba(96,165,250,0.1);color:#60a5fa}
+    .ename{font-size:11px;color:var(--text3)}
+
+    /* MODAL */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:500;align-items:center;justify-content:center;padding:20px}
+    .modal-overlay.open{display:flex}
+    .modal{background:var(--surface);border:1px solid rgba(201,168,76,0.2);border-radius:16px;padding:32px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 40px 80px rgba(0,0,0,.6)}
+    .modal-close{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
+    .modal-close:hover{background:var(--surface2);color:var(--text)}
+    .modal-title{font-size:18px;font-weight:600;color:var(--text);margin-bottom:6px;letter-spacing:-.4px}
+    .modal-sub{font-size:13px;color:var(--text2);margin-bottom:24px}
+    .field{margin-bottom:18px}
+    .field label{display:block;font-size:12px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:.5px;margin-bottom:7px;text-transform:uppercase}
+    .field input,.field textarea,.field select{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:var(--text);font-family:'Geist',sans-serif;outline:none;transition:border-color .15s,box-shadow .15s}
+    .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+    .field textarea{resize:vertical;min-height:80px;line-height:1.5}
+    .field select{cursor:pointer}
+    .field select option{background:var(--surface2)}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .submit-btn{width:100%;background:var(--gold);color:#0a0a08;border:none;padding:12px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s;margin-top:8px}
+    .submit-btn:hover{background:var(--gold2);box-shadow:0 0 24px var(--gold-glow)}
+    .submit-btn:active{transform:scale(.99)}
+
+    /* DETAIL MODAL */
+    .detail-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+    .detail-icon{width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+    .detail-name{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-.4px;margin-bottom:4px}
+    .detail-meta{font-size:12px;color:var(--text3);display:flex;align-items:center;gap:12px}
+    .detail-section{margin-bottom:18px}
+    .detail-section-title{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+    .detail-text{font-size:13px;color:var(--text2);line-height:1.6}
+    .detail-tags{display:flex;gap:6px;flex-wrap:wrap}
+    .detail-tag{font-size:11px;font-family:'Geist Mono',monospace;color:var(--text2);background:var(--surface2);padding:4px 10px;border-radius:5px;border:1px solid var(--border)}
+    .warning-box{background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15);border-radius:var(--radius-sm);padding:12px 14px;font-size:12px;color:#f87171;line-height:1.5}
+    .endorse-form{margin-top:20px;padding-top:20px;border-top:1px solid var(--border)}
+    .endorse-input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:var(--text);font-family:'Geist',sans-serif;outline:none;resize:none;min-height:72px;line-height:1.5;transition:border-color .15s,box-shadow .15s;margin-bottom:10px}
+    .endorse-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+    .endorse-btn{background:none;border:1px solid rgba(201,168,76,0.3);color:var(--gold2);padding:8px 18px;border-radius:var(--radius-sm);font-size:13px;font-family:'Geist',sans-serif;font-weight:500;cursor:pointer;transition:all .15s}
+    .endorse-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
+    .endorse-btn:active{transform:scale(.98)}
+    .endorse-success{display:none;font-size:12px;color:var(--green);margin-top:8px;font-family:'Geist Mono',monospace}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:28px;right:28px;background:var(--surface);border:1px solid rgba(201,168,76,0.3);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);z-index:900;transform:translateY(80px);opacity:0;transition:all .3s;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+    .toast.show{transform:translateY(0);opacity:1}
+
+    /* DIVIDER */
+    .divider{border:none;border-top:1px solid var(--border);margin:0 0 52px}
+
+    /* EMPTY */
+    .empty{text-align:center;padding:48px;color:var(--text3);font-size:13px}
+
+    /* ANIMATIONS */
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    .card{animation:fadeUp .3s ease both}
+    .card:nth-child(1){animation-delay:.04s}
+    .card:nth-child(2){animation-delay:.08s}
+    .card:nth-child(3){animation-delay:.12s}
+    .card:nth-child(4){animation-delay:.16s}
+    .card:nth-child(5){animation-delay:.20s}
+    .card:nth-child(6){animation-delay:.24s}
+  </style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<!-- UPLOAD MODAL -->
+<div class="modal-overlay" id="uploadModal" onclick="closeModalOnBg(event,'uploadModal')">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('uploadModal')">✕</button>
+    <div class="modal-title">Upload an agent</div>
+    <div class="modal-sub">Share a proven agent with the agent registry so your team — and others — can reuse it.</div>
+    <div class="field"><label>Agent name</label><input type="text" id="agentName" placeholder="e.g. CV Screener"></div>
+    <div class="field"><label>What it does</label><textarea id="agentDesc" placeholder="Describe what the agent does in 1–2 sentences…"></textarea></div>
+    <div class="form-row">
+      <div class="field"><label>Category</label>
+        <select id="agentCat">
+          <option value="hr">HR &amp; recruiting</option>
+          <option value="support">Customer support</option>
+          <option value="docs">Document ops</option>
+          <option value="research">Research</option>
+          <option value="finance">Finance</option>
+          <option value="devops">DevOps</option>
+        </select>
+      </div>
+      <div class="field"><label>Model used</label><input type="text" id="agentModel" placeholder="e.g. Claude, GPT-4o"></div>
+    </div>
+    <div class="field"><label>When to use it</label><input type="text" id="agentWhen" placeholder="e.g. When screening more than 20 applicants"></div>
+    <div class="field"><label>When NOT to use it</label><input type="text" id="agentWhenNot" placeholder="e.g. For roles requiring portfolio review"></div>
+    <div class="field"><label>Your team</label><input type="text" id="agentTeam" placeholder="e.g. People Ops @ Acme"></div>
+    <button class="submit-btn" onclick="submitAgent()">Publish agent →</button>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal-overlay" id="detailModal" onclick="closeModalOnBg(event,'detailModal')">
+  <div class="modal" id="detailContent"></div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a class="logo" href="#">
+      <div class="logo-mark">◈</div>
+      <span class="logo-name">Atlas Hub</span>
+      <span class="logo-tag">agent registry</span>
+    </a>
+    <div class="nav-right">
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">🌙</button>
+      <a class="btn-ghost" href="#browse">Browse</a>
+      <button class="btn-gold" onclick="openModal('uploadModal')">+ Upload agent</button>
+    </div>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-pill"><span class="hero-pill-dot"></span> Challenge 04 — Atlas Hub</div>
+  <h1>The agent registry for<br><em>reusable AI agents</em></h1>
+  <p class="hero-sub">One place to publish, discover, and trust the AI agents your organization has already proven.</p>
+  <div class="hero-cta">
+    <button class="btn-gold" onclick="openModal('uploadModal')">+ Upload your agent</button>
+    <a class="btn-ghost" href="#browse">Browse agent registry</a>
+  </div>
+</div>
+
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat"><div class="stat-n" id="countAgents">142</div><div class="stat-l">AGENTS PUBLISHED</div></div>
+    <div class="stat"><div class="stat-n">38</div><div class="stat-l">TEAMS CONTRIBUTING</div></div>
+    <div class="stat"><div class="stat-n" id="countEndorse">1,240</div><div class="stat-l">ENDORSEMENTS</div></div>
+    <div class="stat"><div class="stat-n">6,800</div><div class="stat-l">DEPLOYMENTS</div></div>
+  </div>
+</div>
+
+<div class="main" id="browse">
+  <div style="margin-top:8px;margin-bottom:16px" class="search-box">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" id="searchInput" placeholder="Search agents by task, tool, or team…" oninput="applyFilters()">
+    <span class="kbd">⌘K</span>
+  </div>
+
+  <div class="chips" id="chips">
+    <button class="chip on" onclick="setFilter('all',this)">All agents</button>
+    <button class="chip" onclick="setFilter('hr',this)">HR &amp; recruiting</button>
+    <button class="chip" onclick="setFilter('support',this)">Customer support</button>
+    <button class="chip" onclick="setFilter('docs',this)">Document ops</button>
+    <button class="chip" onclick="setFilter('research',this)">Research</button>
+    <button class="chip" onclick="setFilter('finance',this)">Finance</button>
+    <button class="chip" onclick="setFilter('devops',this)">DevOps</button>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head">
+      <span class="sec-title">Featured agents</span>
+      <button class="see-all-btn" onclick="setFilter('all', document.querySelector('.chip'))">See all →</button>
+    </div>
+    <div class="grid" id="agentGrid"></div>
+    <div class="empty" id="emptyMsg" style="display:none">No agents match that search.</div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="sec">
+    <div class="sec-head"><span class="sec-title">Trending this week</span></div>
+    <div class="trend-list" id="trendList"></div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="sec">
+    <div class="sec-head"><span class="sec-title">From the community</span></div>
+    <div class="egrid" id="endorseGrid"></div>
+  </div>
+</div>
+
+<script>
+  let agents=[
+    {id:1,name:"CV screener",desc:"Ranks applicants against JD criteria, flags mismatches, and outputs a shortlist CSV.",icon:"👤",ci:"pu",tags:["HR","GPT-4o"],endorsed:42,cat:"hr",badge:"pop",featured:true,when:"Screening more than 20 applicants at once.",whenNot:"Roles requiring portfolio or creative review.",team:"People Ops @ Acme"},
+    {id:2,name:"Support triage",desc:"Classifies inbound tickets, routes to the right queue, drafts a first-response.",icon:"💬",ci:"te",tags:["Support","Claude"],endorsed:38,cat:"support",badge:"pop",featured:true,when:"High-volume inbound support queues.",whenNot:"Complex escalations requiring human judgment.",team:"CX @ Tier Mobility"},
+    {id:3,name:"Contract summarizer",desc:"Extracts key clauses, deadlines, and obligations from legal docs into a brief.",icon:"📄",ci:"bl",tags:["Docs","Legal"],endorsed:29,cat:"docs",badge:null,featured:true,when:"Reviewing NDAs, vendor contracts, and SLAs.",whenNot:"Litigation documents or heavily redacted files.",team:"Legal Ops @ FlixBus"},
+    {id:4,name:"Earnings call digest",desc:"Transcribes and summarizes earnings calls with sentiment signals per section.",icon:"📈",ci:"co",tags:["Finance","Whisper"],endorsed:19,cat:"finance",badge:"new",featured:true,when:"Post-earnings research and investor notes.",whenNot:"Real-time trading decisions.",team:"Research @ N26"},
+    {id:5,name:"Incident responder",desc:"Monitors alert feeds, correlates events, drafts a runbook step and Slack post.",icon:"🛡️",ci:"am",tags:["DevOps","PagerDuty"],endorsed:22,cat:"devops",badge:null,featured:false,when:"Recurring alert patterns with known runbooks.",whenNot:"Novel outages with no historical precedent.",team:"Eng @ Delivery Hero"},
+    {id:6,name:"Literature mapper",desc:"Searches arXiv, clusters papers by topic, returns a citation graph with summaries.",icon:"📚",ci:"pk",tags:["Research","arXiv"],endorsed:31,cat:"research",badge:null,featured:true,when:"Starting research in an unfamiliar domain.",whenNot:"Proprietary or unpublished research areas.",team:"Research @ TU Munich"},
+  ];
+  const trending=[
+    {rank:1,name:"Meeting action extractor",team:"Ops @ Siemens",score:61},
+    {rank:2,name:"Onboarding guide writer",team:"People @ Klarna",score:54},
+    {rank:3,name:"RFP matcher",team:"Sales @ Palantir",score:47},
+    {rank:4,name:"Budget variance explainer",team:"Finance @ N26",score:39},
+    {rank:5,name:"Code review assistant",team:"Eng @ Delivery Hero",score:35},
+  ];
+  const endorsements=[
+    {quote:"Dropped CV screener into our ATS in 2 hours. Cut first-round review time by 60%.",by:"TA lead, Celonis",av:"CL",avc:"av-a"},
+    {quote:"Support triage routes 89% of tickets correctly on day one with zero fine-tuning.",by:"CX team, Tier Mobility",av:"TM",avc:"av-b"},
+    {quote:"Contract summarizer handles 40-page NDAs faster than any associate I've briefed.",by:"Legal ops, FlixBus",av:"FB",avc:"av-c"},
+    {quote:"Literature mapper is now how our entire team does a new-domain lit review.",by:"Research, TU Munich",av:"TU",avc:"av-d"},
+  ];
+
+  let activeFilter='all';
+
+  function renderAgents(list){
+    const g=document.getElementById('agentGrid');
+    const e=document.getElementById('emptyMsg');
+    g.innerHTML='';
+    if(!list.length){e.style.display='block';return;}
+    e.style.display='none';
+    list.forEach(a=>{
+      const b=a.badge?`<span class="bdg ${a.badge==='new'?'bdg-new':'bdg-pop'}">${a.badge}</span>`:'';
+      const card=document.createElement('div');
+      card.className='card'+(a.featured?' top':'');
+      card.innerHTML=`
+      <div class="card-head"><div class="ci ${a.ci}">${a.icon}</div>${b}</div>
+      <div class="card-name">${a.name}</div>
+      <div class="card-desc">${a.desc}</div>
+      <div class="card-foot">
+        <div class="tags">${a.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+        <div class="endorses"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>${a.endorsed}</div>
+      </div>`;
+      card.onclick=()=>openDetail(a.id);
+      g.appendChild(card);
+    });
+  }
+
+  function renderTrending(){
+    const l=document.getElementById('trendList');
+    trending.forEach(t=>{
+      const r=document.createElement('div');
+      r.className='trow';
+      r.innerHTML=`
+      <span class="trank${t.rank<=3?' gold':''}">${t.rank}</span>
+      <div class="tinfo"><div class="tname">${t.name}</div><div class="tteam">${t.team}</div></div>
+      <div class="tscore"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/></svg>${t.score}</div>`;
+      r.onclick=()=>showToast('Full detail page coming soon!');
+      l.appendChild(r);
+    });
+  }
+
+  function renderEndorsements(){
+    const g=document.getElementById('endorseGrid');
+    endorsements.forEach(e=>{
+      const d=document.createElement('div');
+      d.className='ecard';
+      d.innerHTML=`<div class="ecard-quote">${e.quote}</div><div class="eby"><div class="av ${e.avc}">${e.av}</div><span class="ename">${e.by}</span></div>`;
+      g.appendChild(d);
+    });
+  }
+
+  function setFilter(f,el){
+    activeFilter=f;
+    document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+    el.classList.add('on');
+    applyFilters();
+  }
+
+  function applyFilters(){
+    const q=document.getElementById('searchInput').value.toLowerCase();
+    let list=agents;
+    if(activeFilter!=='all') list=list.filter(a=>a.cat===activeFilter);
+    if(q) list=list.filter(a=>a.name.toLowerCase().includes(q)||a.desc.toLowerCase().includes(q)||a.tags.some(t=>t.toLowerCase().includes(q)));
+    renderAgents(list);
+  }
+
+  function openDetail(id){
+    const a=agents.find(x=>x.id===id);
+    if(!a) return;
+    document.getElementById('detailContent').innerHTML=`
+    <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+    <div class="detail-header">
+      <div class="detail-icon ci ${a.ci}" style="width:52px;height:52px;font-size:26px">${a.icon}</div>
+      <div>
+        <div class="detail-name">${a.name}</div>
+        <div class="detail-meta">
+          <span>${a.team}</span>
+          <span>·</span>
+          <span style="color:var(--gold2)">${a.endorsed} endorsements</span>
+        </div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">What it does</div>
+      <div class="detail-text">${a.desc}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">When to use</div>
+      <div class="detail-text">${a.when}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">When NOT to use</div>
+      <div class="warning-box">${a.whenNot}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-title">Tools & models</div>
+      <div class="detail-tags">${a.tags.map(t=>`<span class="detail-tag">${t}</span>`).join('')}</div>
+    </div>
+    <div class="endorse-form">
+      <div class="detail-section-title" style="margin-bottom:10px">Endorse this agent</div>
+      <textarea class="endorse-input" id="endorseText" placeholder="We used this for… it saved us… works best when…"></textarea>
+      <button class="endorse-btn" onclick="submitEndorse(${a.id})">👍 Endorse this agent</button>
+      <div class="endorse-success" id="endorseSuccess">✓ Endorsement submitted — thank you!</div>
+    </div>`;
+    openModal('detailModal');
+  }
+
+  function submitEndorse(id){
+    const txt=document.getElementById('endorseText').value.trim();
+    if(!txt){showToast('Please write something before endorsing.');return;}
+    const a=agents.find(x=>x.id===id);
+    if(a) a.endorsed++;
+    document.getElementById('endorseSuccess').style.display='block';
+    document.getElementById('endorseText').value='';
+    applyFilters();
+    showToast('Endorsement submitted!');
+  }
+
+  function submitAgent(){
+    const name=document.getElementById('agentName').value.trim();
+    const desc=document.getElementById('agentDesc').value.trim();
+    const cat=document.getElementById('agentCat').value;
+    const model=document.getElementById('agentModel').value.trim();
+    const team=document.getElementById('agentTeam').value.trim();
+    const when=document.getElementById('agentWhen').value.trim();
+    const whenNot=document.getElementById('agentWhenNot').value.trim();
+    if(!name||!desc){showToast('Please fill in at least a name and description.');return;}
+    const icons={hr:'👤',support:'💬',docs:'📄',research:'📚',finance:'📈',devops:'🛡️'};
+    const cis={hr:'pu',support:'te',docs:'bl',research:'pk',finance:'co',devops:'am'};
+    agents.unshift({id:Date.now(),name,desc,icon:icons[cat]||'🤖',ci:cis[cat]||'pu',tags:[cat,model||'Custom'],endorsed:0,cat,badge:'new',featured:true,when:when||'—',whenNot:whenNot||'—',team:team||'Anonymous'});
+    document.getElementById('countAgents').textContent=parseInt(document.getElementById('countAgents').textContent)+1;
+    closeModal('uploadModal');
+    applyFilters();
+    showToast('Agent published to the agent registry!');
+    ['agentName','agentDesc','agentModel','agentWhen','agentWhenNot','agentTeam'].forEach(id=>document.getElementById(id).value='');
+  }
+
+  function openModal(id){document.getElementById(id).classList.add('open');document.body.style.overflow='hidden'}
+  function closeModal(id){document.getElementById(id).classList.remove('open');document.body.style.overflow=''}
+  function closeModalOnBg(e,id){if(e.target===document.getElementById(id))closeModal(id)}
+
+  let toastTimer;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+  }
+
+  function toggleTheme(){
+    const html=document.documentElement;
+    const dark=html.getAttribute('data-theme')==='dark';
+    html.setAttribute('data-theme',dark?'light':'dark');
+    document.getElementById('themeBtn').textContent=dark?'☀️':'🌙';
+  }
+
+  renderAgents(agents);
+  renderTrending();
+  renderEndorsements();
+</script>
+</body>
+</html>
