@@ -3,21 +3,34 @@ import {
   ArrowLeft,
   ArrowRight,
   Boxes,
+  Calendar,
+  Camera,
   Check,
+  ChevronDown,
   Cloud,
   Database,
   Download,
   FileCode2,
+  Folder,
+  Globe,
+  Info,
   Layers3,
+  LayoutGrid,
   Loader2,
   LockKeyhole,
+  LogOut,
+  MapPin,
   Plus,
   Search,
   Send,
+  Settings,
   SlidersHorizontal,
   Sparkles,
   Star,
+  ThumbsUp,
   Upload,
+  User,
+  Users,
   X,
 } from "lucide-react";
 import { categoryMeta } from "./data/mockAgents.js";
@@ -28,7 +41,10 @@ import {
   getApiBaseLabel,
   publishAgent,
   searchAgents,
+  setAuthTokenGetter,
 } from "./api/agents.js";
+import AuthModal from "./components/AuthModal.jsx";
+import { useAuth } from "./context/AuthContext.jsx";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   month: "short",
@@ -46,6 +62,77 @@ const uploadSubtitleWords =
 const descriptionLimit = 300;
 const semanticMatchThreshold = 0.6;
 const semanticMatchThresholdLabel = `${Math.round(semanticMatchThreshold * 100)}%`;
+const defaultProfileSettings = {
+  showLocation: true,
+  showWebsite: true,
+  showOrganizations: true,
+  showJoinDate: true,
+  showStats: true,
+  showActivity: true,
+};
+
+function createDefaultCurrentUser() {
+  return {
+    id: null,
+    name: "Guest",
+    handle: "",
+    bio: "",
+    avatar: null,
+    banner: null,
+    location: "",
+    website: "",
+    joinedAt: null,
+    role: "Guest",
+    organizations: [],
+    stats: { agents: 0, downloads: 0, endorsements: 0, collections: 0 },
+    settings: { ...defaultProfileSettings },
+  };
+}
+
+const profileActivitySeed = [
+  {
+    type: "upload",
+    icon: "Upload",
+    color: "rgba(74,222,128,0.1)",
+    text: "Published rl_learning agent",
+    time: "2 days ago",
+  },
+  {
+    type: "endorse",
+    icon: "ThumbsUp",
+    color: "rgba(201,168,76,0.1)",
+    text: "Endorsed Research Buddy by @elena",
+    time: "4 days ago",
+  },
+  {
+    type: "collection",
+    icon: "Folder",
+    color: "rgba(96,165,250,0.1)",
+    text: "Created collection HR Automation Toolkit",
+    time: "1 week ago",
+  },
+  {
+    type: "upload",
+    icon: "Upload",
+    color: "rgba(74,222,128,0.1)",
+    text: "Published logic-tutor agent",
+    time: "2 weeks ago",
+  },
+  {
+    type: "join",
+    icon: "Users",
+    color: "rgba(244,114,182,0.1)",
+    text: "Joined organization Acme Corp",
+    time: "6 months ago",
+  },
+];
+
+const profileActivityIcons = {
+  Upload,
+  ThumbsUp,
+  Folder,
+  Users,
+};
 const uploadMetadataFields = [
   "toolsIntegrations",
   "prerequisites",
@@ -135,6 +222,7 @@ function normalizeAgent(agent) {
     is_public: agent.is_public ?? true,
     created_at: agent.created_at || new Date().toISOString(),
     team: agent.team || "Atlas contributor",
+    uploader_id: agent.uploader_id ?? agent.uploaderId ?? null,
     endorsements: Number(agent.endorsements ?? agent.review_count ?? 0),
     downloads: Number(agent.downloads ?? 0),
     featured: Boolean(agent.featured ?? false),
@@ -182,13 +270,82 @@ function titleCase(value) {
 
 function getInitialScreen() {
   const hash = window.location.hash.replace("#", "");
-  return hash === "browse" || hash === "agent" || hash === "upload" ? hash : "home";
+  return hash === "browse" || hash === "agent" || hash === "upload" || hash === "profile"
+    ? hash
+    : "home";
 }
 
 function getScreenUrl(screen) {
-  const hash =
-    screen === "browse" ? "#browse" : screen === "agent" ? "#agent" : screen === "upload" ? "#upload" : "";
+  const hashMap = {
+    browse: "#browse",
+    agent: "#agent",
+    upload: "#upload",
+    profile: "#profile",
+  };
+  const hash = hashMap[screen] || "";
   return `${window.location.pathname}${window.location.search}${hash}`;
+}
+
+function getProfileInitials(name) {
+  return String(name || "Atlas")
+    .trim()
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function formatJoinDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
+}
+
+function buildProfileFromTeam(teamName, currentUser) {
+  if (!teamName || teamName === currentUser.name) return currentUser;
+
+  const slug = String(teamName).toLowerCase().replace(/\s+/g, "-");
+  const firstName = String(teamName).split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  return {
+    id: slug,
+    name: teamName,
+    handle: `@${firstName || "contributor"}`,
+    bio: `${teamName} publishes reusable agents on Atlas Hub.`,
+    avatar: null,
+    banner: null,
+    location: "",
+    website: "",
+    joinedAt: "2025-02-01",
+    role: "Contributor",
+    organizations: [],
+    stats: { agents: 1, downloads: 120, endorsements: 8, collections: 0 },
+    settings: { ...defaultProfileSettings },
+  };
+}
+
+function buildProfileFromAuthor(review, currentUser) {
+  if (review.authorName === currentUser.name || review.authorName === "You") return currentUser;
+
+  const slug = String(review.authorName).toLowerCase().replace(/\s+/g, "-");
+  const firstName = String(review.authorName).split(/\s+/)[0].toLowerCase();
+
+  return {
+    id: slug,
+    name: review.authorName,
+    handle: `@${firstName}`,
+    bio: `${review.authorTeam} contributor reviewing agents on Atlas Hub.`,
+    avatar: null,
+    banner: null,
+    location: "",
+    website: "",
+    joinedAt: "2025-03-01",
+    role: review.authorTeam || "Contributor",
+    organizations: [],
+    stats: { agents: 0, downloads: 0, endorsements: 12, collections: 1 },
+    settings: { ...defaultProfileSettings },
+  };
 }
 
 function formatDate(value) {
@@ -410,6 +567,11 @@ function sortReviews(reviews, sortBy) {
 }
 
 export default function App() {
+  const { configured: authConfigured, loading: authLoading, profile, signIn, signUp, signInWithProvider, signOut, updateProfile, getAccessToken } =
+    useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState("sign-in");
+  const [authStuck, setAuthStuck] = useState(false);
   const [screen, setScreen] = useState(getInitialScreen);
   const screenRef = useRef(screen);
   const prevScreenRef = useRef(screen === "upload" ? "home" : screen);
@@ -432,8 +594,56 @@ export default function App() {
   const [publicOnly, setPublicOnly] = useState(true);
   const [searchState, setSearchState] = useState({ status: "idle", results: null, message: "" });
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [profileUser, setProfileUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(createDefaultCurrentUser);
   const [landingQuery, setLandingQuery] = useState("");
   const [toast, setToast] = useState({ message: "", visible: false });
+
+  const isOwnProfile = profileUser?.id === currentUser?.id;
+  const authLoadingActive = authLoading && !authStuck;
+
+  useEffect(() => {
+    if (!authLoading) {
+      setAuthStuck(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setAuthStuck(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, [authLoading]);
+
+  useEffect(() => {
+    if (!profile) return;
+    setCurrentUser((prev) => ({
+      ...prev,
+      id: profile.id ?? prev.id,
+      name: profile.displayName || profile.email?.split("@")[0] || prev.name,
+      handle: profile.username
+        ? `@${String(profile.username).replace(/^@/, "")}`
+        : prev.handle,
+      bio: profile.bio ?? prev.bio,
+      avatar: profile.avatar_url || prev.avatar,
+      banner: profile.banner_url || prev.banner,
+      location: profile.location ?? prev.location,
+      website: profile.website ?? prev.website,
+      role: profile.role || prev.role,
+      settings: profile.settings || prev.settings,
+      email: profile.email || prev.email,
+      joinedAt: profile.createdAt
+        ? String(profile.createdAt).split("T")[0]
+        : prev.joinedAt,
+    }));
+  }, [profile]);
+
+  useEffect(() => {
+    if (profile === null && !authLoadingActive) {
+      setCurrentUser(createDefaultCurrentUser());
+    }
+  }, [profile, authLoadingActive]);
+
+  useEffect(() => {
+    setAuthTokenGetter(getAccessToken);
+    return () => setAuthTokenGetter(null);
+  }, [getAccessToken]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setIsMounted(true));
@@ -585,6 +795,12 @@ export default function App() {
   }, [changeScreen, screen, selectedAgent]);
 
   useEffect(() => {
+    if (screen === "profile" && !profileUser) {
+      changeScreen("browse");
+    }
+  }, [changeScreen, profileUser, screen]);
+
+  useEffect(() => {
     function updateScrollState() {
       const top = window.scrollY || document.documentElement.scrollTop;
       const scrollable =
@@ -733,9 +949,49 @@ export default function App() {
     [filteredAgents, searchState.results, searchState.lowConfidence],
   );
 
+  function openAuthModal(mode = "sign-in") {
+    setAuthModalMode(mode);
+    setAuthModalOpen(true);
+  }
+
+  function requireAuth(action) {
+    if (profile) {
+      action();
+      return;
+    }
+    openAuthModal("sign-in");
+    showToast("Sign in to continue.");
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } catch {
+      // ignore — clear local state regardless
+    }
+    setCurrentUser(createDefaultCurrentUser());
+    setProfileUser(null);
+    setSelectedAgent(null);
+    showToast("Signed out.");
+    if (screenRef.current === "upload" || screenRef.current === "profile") {
+      navigate("home");
+    }
+  }
+
   function navigate(nextScreen) {
     changeScreen(nextScreen);
   }
+
+  function goToUpload() {
+    requireAuth(() => navigate("upload"));
+  }
+
+  useEffect(() => {
+    if (authLoadingActive || profile || screen !== "upload") return;
+    changeScreen("home");
+    openAuthModal("sign-in");
+    showToast("Sign in to publish an agent.");
+  }, [authLoadingActive, changeScreen, profile, screen, showToast]);
 
   function closeUploadPage() {
     navigate(prevScreenRef.current === "browse" ? "browse" : "home");
@@ -745,6 +1001,58 @@ export default function App() {
     event.preventDefault();
     setQuery(landingQuery);
     navigate("browse");
+  }
+
+  function openProfile(user) {
+    setProfileUser(user);
+    if (screenRef.current !== "profile") {
+      navigate("profile");
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function openOwnProfile() {
+    openProfile(currentUser);
+  }
+
+  function closeProfile() {
+    const destination = prevScreenRef.current === "profile" ? "browse" : prevScreenRef.current;
+    navigate(destination === "profile" ? "browse" : destination);
+    window.setTimeout(() => {
+      setProfileUser(null);
+    }, screenTransitionMs + 20);
+  }
+
+  async function updateCurrentUser(patch) {
+    const merged = {
+      ...currentUser,
+      ...patch,
+      settings: patch.settings ? { ...currentUser.settings, ...patch.settings } : currentUser.settings,
+      stats: patch.stats ? { ...currentUser.stats, ...patch.stats } : currentUser.stats,
+      organizations: patch.organizations ?? currentUser.organizations,
+    };
+
+    setCurrentUser(merged);
+    setProfileUser((viewing) => (viewing?.id === currentUser.id ? merged : viewing));
+
+    if (!profile?.id) return;
+
+    try {
+      await updateProfile({
+        name: merged.name,
+        handle: merged.handle,
+        bio: merged.bio,
+        avatar: merged.avatar,
+        banner: merged.banner,
+        location: merged.location,
+        website: merged.website,
+        role: merged.role,
+        settings: merged.settings,
+      });
+    } catch (error) {
+      showToast(error.message || "Could not save profile.");
+    }
   }
 
   async function openAgent(agent) {
@@ -775,8 +1083,13 @@ export default function App() {
   }
 
   function addUploadedAgent(agent) {
-    setAgents((current) => [normalizeAgent(agent), ...current]);
+    setAgents((current) => [
+      normalizeAgent({ ...agent, team: currentUser.name, uploader_id: currentUser.id }),
+      ...current,
+    ]);
   }
+
+  const profileViewUser = isOwnProfile ? currentUser : profileUser;
 
   return (
     <>
@@ -786,7 +1099,16 @@ export default function App() {
         <Nav
           screen={screen}
           onNavigate={navigate}
-          onUpload={() => navigate("upload")}
+          onUpload={goToUpload}
+          onSignIn={() => openAuthModal("sign-in")}
+          onSignOut={handleSignOut}
+          onOpenOwnProfile={openOwnProfile}
+          onNavigateToBrowse={() => navigate("browse")}
+          onToast={showToast}
+          currentUser={currentUser}
+          profile={profile}
+          authLoading={authLoadingActive}
+          authConfigured={authConfigured}
           apiState={apiState}
           scrolled={scrolled}
           scrollProgress={scrollProgress}
@@ -799,7 +1121,7 @@ export default function App() {
               setQuery={setLandingQuery}
               onSearch={submitLandingSearch}
               onBrowse={() => navigate("browse")}
-              onUpload={() => navigate("upload")}
+              onUpload={goToUpload}
               agentCount={agents.length}
             />
           ) : screen === "upload" ? (
@@ -808,8 +1130,23 @@ export default function App() {
             <AgentPage
               agent={selectedAgent}
               allAgents={agents}
+              currentUser={currentUser}
               onBack={closeAgent}
               onNavigateToAgent={openAgent}
+              onOpenProfile={openProfile}
+              onToast={showToast}
+            />
+          ) : screen === "profile" && profileViewUser ? (
+            <ProfilePage
+              user={profileViewUser}
+              isOwnProfile={isOwnProfile}
+              allAgents={agents}
+              activity={profileActivitySeed}
+              onBack={closeProfile}
+              onNavigateToAgent={openAgent}
+              onUpload={goToUpload}
+              onSignIn={() => openAuthModal("sign-in")}
+              onUpdateUser={updateCurrentUser}
               onToast={showToast}
             />
           ) : (
@@ -831,22 +1168,168 @@ export default function App() {
               apiState={apiState}
               totalAgentCount={agents.length}
               onOpenAgent={openAgent}
-              onUpload={() => navigate("upload")}
+              onUpload={goToUpload}
               onToast={showToast}
             />
           )}
         </main>
-
-        <Toast message={toast.message} visible={toast.visible} />
       </div>
+
+      <AuthModal
+        mode={authModalMode}
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onModeChange={setAuthModalMode}
+        onSignIn={signIn}
+        onSignUp={signUp}
+        onSignInWithProvider={signInWithProvider}
+      />
+
+      <Toast message={toast.message} visible={toast.visible} />
     </>
   );
 }
 
-function Nav({ screen, onNavigate, onUpload, apiState, scrolled, scrollProgress }) {
+function NavAvatarMenu({
+  currentUser,
+  onSignOut,
+  onOpenOwnProfile,
+  onUpload,
+  onNavigateToBrowse,
+}) {
+  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (event) => {
+      if (!ref.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="nav-avatar-wrapper" ref={ref}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className={`nav-avatar-trigger ${open ? "nav-avatar-trigger--open" : ""}`}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="nav-avatar-trigger-circle">
+          {currentUser.avatar ? (
+            <img src={currentUser.avatar} alt="" />
+          ) : (
+            <span>{getProfileInitials(currentUser.name)}</span>
+          )}
+        </span>
+        <ChevronDown className="chevron" size={10} />
+      </button>
+
+      <div className={`nav-dropdown ${open ? "nav-dropdown--open" : ""}`} role="menu">
+        <div className="nav-dropdown-header">
+          <span className="nav-dropdown-header-avatar">
+            {currentUser.avatar ? (
+              <img src={currentUser.avatar} alt="" />
+            ) : (
+              <span>{getProfileInitials(currentUser.name)}</span>
+            )}
+          </span>
+          <span className="nav-dropdown-header-copy">
+            <strong>{currentUser.name}</strong>
+            {currentUser.handle ? <small>{currentUser.handle}</small> : null}
+          </span>
+        </div>
+
+        <div className="nav-dropdown-divider" />
+
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onOpenOwnProfile();
+            setOpen(false);
+          }}
+        >
+          <User size={15} />
+          View profile
+        </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onOpenOwnProfile();
+            setOpen(false);
+          }}
+        >
+          <Settings size={15} />
+          Edit profile
+        </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onUpload();
+            setOpen(false);
+          }}
+        >
+          <Upload size={15} />
+          Upload agent
+        </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onNavigateToBrowse();
+            setOpen(false);
+          }}
+        >
+          <LayoutGrid size={15} />
+          Browse agents
+        </button>
+
+        <div className="nav-dropdown-divider" />
+
+        <button
+          className="nav-dropdown-item danger"
+          type="button"
+          onClick={() => {
+            onSignOut();
+            setOpen(false);
+          }}
+        >
+          <LogOut size={15} />
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Nav({
+  screen,
+  onNavigate,
+  onUpload,
+  onSignIn,
+  onSignOut,
+  onOpenOwnProfile,
+  onNavigateToBrowse,
+  onToast,
+  currentUser,
+  profile,
+  authLoading,
+  authConfigured,
+  apiState,
+  scrolled,
+  scrollProgress,
+}) {
+  const showScrollProgress = screen === "browse" || screen === "agent" || screen === "profile";
+
   return (
     <header className={`site-nav ${scrolled ? "nav--scrolled" : ""}`}>
-      {screen === "browse" || screen === "agent" ? (
+      {showScrollProgress ? (
         <div className="scroll-progress" style={{ width: `${scrollProgress}%` }} />
       ) : null}
       <a
@@ -874,7 +1357,11 @@ function Nav({ screen, onNavigate, onUpload, apiState, scrolled, scrollProgress 
           Home
         </button>
         <button
-          className={screen === "browse" || screen === "agent" ? "nav-link active" : "nav-link"}
+          className={
+            screen === "browse" || screen === "agent" || screen === "profile"
+              ? "nav-link active"
+              : "nav-link"
+          }
           type="button"
           onClick={() => onNavigate("browse")}
         >
@@ -888,6 +1375,25 @@ function Nav({ screen, onNavigate, onUpload, apiState, scrolled, scrollProgress 
               ? "Connecting"
               : "Backend error"}
         </span>
+        {authLoading ? (
+          <button className="ghost-btn nav-signin-btn" type="button" disabled>
+            <Loader2 className="spin" size={14} />
+            Loading
+          </button>
+        ) : profile ? (
+          <NavAvatarMenu
+            currentUser={currentUser}
+            onNavigateToBrowse={onNavigateToBrowse}
+            onOpenOwnProfile={onOpenOwnProfile}
+            onSignOut={onSignOut}
+            onUpload={onUpload}
+          />
+        ) : (
+          <button className="ghost-btn nav-signin-btn" type="button" onClick={onSignIn}>
+            <LockKeyhole size={14} />
+            Sign in
+          </button>
+        )}
         <button className="primary-btn compact" type="button" onClick={onUpload}>
           <Upload size={16} />
           Upload
@@ -1558,7 +2064,7 @@ function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
   );
 }
 
-function AgentCard({ agent, index, onOpen }) {
+function AgentCard({ agent, index, onOpen, className = "", style = undefined }) {
   const [transform, setTransform] = useState(undefined);
   const similarity = Number(agent.similarity);
   const hasSimilarity = Number.isFinite(similarity);
@@ -1595,7 +2101,7 @@ function AgentCard({ agent, index, onOpen }) {
 
   return (
     <button
-      className="agent-card will-animate"
+      className={`agent-card will-animate ${className}`.trim()}
       type="button"
       onClick={handleClick}
       onMouseMove={handleMouseMove}
@@ -1604,6 +2110,7 @@ function AgentCard({ agent, index, onOpen }) {
       style={{
         transform,
         transitionDelay: transform ? "0ms" : `${index * 35}ms`,
+        ...style,
       }}
     >
       <span className="agent-card-topline">
@@ -1642,7 +2149,15 @@ function AgentCard({ agent, index, onOpen }) {
   );
 }
 
-function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () => {} }) {
+function AgentPage({
+  agent,
+  allAgents,
+  currentUser,
+  onBack,
+  onNavigateToAgent,
+  onOpenProfile,
+  onToast = () => {},
+}) {
   const pageRef = useRef(null);
   const fadeTimerRef = useRef(null);
   const validationTimerRef = useRef(null);
@@ -1879,10 +2394,19 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
           </div>
 
           <div className="uploader-row">
-            <span className="avatar-circle">{getTeamInitials(agent.team)}</span>
+            <button
+              className="profile-link-avatar"
+              type="button"
+              onClick={() => onOpenProfile(buildProfileFromTeam(agent.team, currentUser))}
+            >
+              <span className="avatar-circle">{getTeamInitials(agent.team)}</span>
+            </button>
             <span>
               Published by{" "}
-              <button type="button" onClick={() => onToast("Team profiles coming soon.")}>
+              <button
+                type="button"
+                onClick={() => onOpenProfile(buildProfileFromTeam(agent.team, currentUser))}
+              >
                 {agent.team}
               </button>
             </span>
@@ -1963,6 +2487,9 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
                 review={review}
                 isNew={newReviewIds.includes(review.id)}
                 onVote={handleReviewVote}
+                onOpenProfile={() =>
+                  onOpenProfile(buildProfileFromAuthor(review, currentUser))
+                }
               />
             ))}
           </div>
@@ -2028,7 +2555,7 @@ function AgentPage({ agent, allAgents, onBack, onNavigateToAgent, onToast = () =
         <button
           className="agent-sidebar-card author-card will-animate"
           type="button"
-          onClick={() => onToast("Team profiles coming soon.")}
+          onClick={() => onOpenProfile(buildProfileFromTeam(agent.team, currentUser))}
         >
           <span className="avatar-circle">{getTeamInitials(agent.team)}</span>
           <span>
@@ -2196,13 +2723,17 @@ function ReviewStars({
   );
 }
 
-function ReviewCard({ review, isNew, onVote }) {
+function ReviewCard({ review, isNew, onVote, onOpenProfile }) {
   return (
     <article className={`review-card ${isNew ? "is-new" : ""}`}>
       <header className="review-card-header">
-        <span className="review-avatar">{review.authorInitials}</span>
+        <button className="review-avatar profile-link-avatar" type="button" onClick={onOpenProfile}>
+          {review.authorInitials}
+        </button>
         <span className="review-author">
-          <strong>{review.authorName}</strong>
+          <button className="review-author-link" type="button" onClick={onOpenProfile}>
+            <strong>{review.authorName}</strong>
+          </button>
           <small>{review.authorTeam}</small>
         </span>
         <ReviewStars rating={review.rating} />
@@ -2936,6 +3467,507 @@ function Toast({ message, visible }) {
     <div className={`toast ${visible ? "show" : ""}`} role="status" aria-live="polite">
       {message}
     </div>
+  );
+}
+
+function ProfilePage({
+  user,
+  isOwnProfile,
+  allAgents,
+  activity,
+  onBack,
+  onNavigateToAgent,
+  onUpload,
+  onSignIn,
+  onUpdateUser,
+  onToast,
+}) {
+  const pageRef = useRef(null);
+  const bannerInputRef = useRef(null);
+  const avatarInputRef = useRef(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [following, setFollowing] = useState(false);
+
+  const publishedAgents = useMemo(
+    () =>
+      allAgents.filter(
+        (agent) => agent.team === user.name || agent.uploader_id === user.id,
+      ),
+    [allAgents, user.id, user.name],
+  );
+
+  useEffect(() => {
+    setEditOpen(false);
+    setFollowing(false);
+  }, [user.id]);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return undefined;
+
+    const animatedElements = Array.from(
+      root.querySelectorAll(".profile-reveal, .profile-agent-card"),
+    );
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("did-animate");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+    );
+
+    animatedElements.forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      const alreadyVisible = rect.top < window.innerHeight && rect.bottom > 0;
+      if (alreadyVisible) {
+        element.classList.add("did-animate");
+      } else {
+        observer.observe(element);
+      }
+    });
+    return () => observer.disconnect();
+  }, [publishedAgents.length, user.id, user.settings]);
+
+  function readImageFile(file, field) {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      onUpdateUser({ [field]: reader.result });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleFollow() {
+    if (following) return;
+    setFollowing(true);
+    onToast(`Following ${user.name}`);
+  }
+
+  const settings = user.settings || defaultProfileSettings;
+
+  if (isOwnProfile && user.id === null) {
+    return (
+      <section className="profile-page" ref={pageRef}>
+        <div className="profile-page-inner">
+          <div className="profile-topbar">
+            <button className="agent-back-btn" type="button" onClick={onBack}>
+              <ArrowLeft size={15} />
+              Back
+            </button>
+          </div>
+          <div className="profile-guest-prompt">
+            <LockKeyhole size={32} color="var(--text3)" />
+            <h2>Sign in to view your profile</h2>
+            <p>Create an account or sign in to publish agents and build your profile.</p>
+            <button className="primary-btn" type="button" onClick={onSignIn}>
+              Sign in
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="profile-page" ref={pageRef}>
+      <div className="profile-page-inner">
+        <div className="profile-topbar">
+          <button className="agent-back-btn" type="button" onClick={onBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        </div>
+
+        <>
+        <div className="profile-banner-wrap">
+          <div className="profile-banner">
+            {user.banner ? <img src={user.banner} alt="" className="profile-banner-image" /> : null}
+            {isOwnProfile ? (
+              <>
+                <button
+                  className="profile-media-edit"
+                  type="button"
+                  onClick={() => bannerInputRef.current?.click()}
+                >
+                  <Camera size={18} />
+                  <span>Change banner</span>
+                </button>
+                <input
+                  ref={bannerInputRef}
+                  accept="image/*"
+                  className="profile-file-input"
+                  type="file"
+                  onChange={(event) => {
+                    readImageFile(event.target.files?.[0], "banner");
+                    event.target.value = "";
+                  }}
+                />
+              </>
+            ) : null}
+          </div>
+
+          <div className="profile-avatar-wrap">
+            <div className="profile-avatar">
+              {user.avatar ? (
+                <img src={user.avatar} alt="" />
+              ) : (
+                <span>{getProfileInitials(user.name)}</span>
+              )}
+              {isOwnProfile ? (
+                <>
+                  <button
+                    className="profile-media-edit profile-media-edit--avatar"
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    <Camera size={18} />
+                    <span>Change photo</span>
+                  </button>
+                  <input
+                    ref={avatarInputRef}
+                    accept="image/*"
+                    className="profile-file-input"
+                    type="file"
+                    onChange={(event) => {
+                      readImageFile(event.target.files?.[0], "avatar");
+                      event.target.value = "";
+                    }}
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="profile-body">
+          <div className="profile-identity-row">
+            <div className="profile-identity-copy">
+              <div className="profile-name-line">
+                <h1>{user.name}</h1>
+                <span className="profile-handle">{user.handle}</span>
+                <span className="profile-role-badge">{user.role}</span>
+              </div>
+            </div>
+            <div className="profile-identity-actions">
+              {isOwnProfile ? (
+                <button className="ghost-btn" type="button" onClick={() => setEditOpen(true)}>
+                  Edit profile
+                </button>
+              ) : (
+                <>
+                  <button
+                    className={following ? "secondary-btn profile-follow-btn is-following" : "primary-btn compact profile-follow-btn"}
+                    type="button"
+                    onClick={handleFollow}
+                  >
+                    {following ? "Following" : "+ Follow"}
+                  </button>
+                  <button
+                    className="ghost-btn profile-more-btn"
+                    type="button"
+                    onClick={() => onToast("More options coming soon")}
+                  >
+                    ···
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {isOwnProfile && !user.bio ? (
+            <button className="profile-bio-placeholder" type="button" onClick={() => setEditOpen(true)}>
+              Add a bio…
+            </button>
+          ) : user.bio ? (
+            <p className="profile-bio">{user.bio}</p>
+          ) : null}
+
+          <div className="profile-meta-row">
+            {settings.showLocation && user.location ? (
+              <span>
+                <MapPin size={14} />
+                {user.location}
+              </span>
+            ) : null}
+            {settings.showWebsite && user.website ? (
+              <span>
+                <Globe size={14} />
+                <a href={user.website} rel="noreferrer" target="_blank">
+                  {user.website.replace(/^https?:\/\//, "")}
+                </a>
+              </span>
+            ) : null}
+            {settings.showJoinDate && user.joinedAt ? (
+              <span>
+                <Calendar size={14} />
+                Joined {formatJoinDate(user.joinedAt)}
+              </span>
+            ) : null}
+          </div>
+
+          {settings.showStats ? (
+            <ProfileStatsBar stats={user.stats} />
+          ) : null}
+
+          {settings.showOrganizations && user.organizations?.length ? (
+            <section className="profile-section profile-reveal will-animate">
+              <h2>Organizations</h2>
+              <div className="profile-org-row">
+                {user.organizations.map((org) => (
+                  <button
+                    className="profile-org-chip"
+                    key={org.id}
+                    type="button"
+                    onClick={() => onToast(`${org.name} org page coming soon.`)}
+                  >
+                    <span className="profile-org-avatar" style={{ background: org.color }}>
+                      {org.initials}
+                    </span>
+                    <span>{org.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="profile-section profile-reveal will-animate">
+            <h2>Published agents</h2>
+            {publishedAgents.length ? (
+              <div className="profile-agents-grid">
+                {publishedAgents.map((agent, index) => (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    index={index}
+                    className="profile-agent-card will-animate"
+                    onOpen={() => onNavigateToAgent(agent)}
+                    style={{ "--field-delay": `${index * 35}ms` }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="profile-empty-state">
+                <p>No agents published yet.</p>
+                {isOwnProfile ? (
+                  <button className="ghost-btn" type="button" onClick={onUpload}>
+                    <Plus size={16} />
+                    Upload your first agent
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </section>
+
+          {user.id != null && settings.showActivity ? (
+            <section className="profile-section profile-reveal will-animate">
+              <h2>Recent activity</h2>
+              <div className="profile-activity-list">
+                {activity.map((item, index) => {
+                  const Icon = profileActivityIcons[item.icon] || Upload;
+                  return (
+                    <div className="profile-activity-item" key={`${item.type}-${index}`}>
+                      <span className="profile-activity-icon" style={{ background: item.color }}>
+                        <Icon size={16} />
+                      </span>
+                      <span className="profile-activity-text">{item.text}</span>
+                      <span className="profile-activity-time">{item.time}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+        </div>
+        </>
+      </div>
+
+      {isOwnProfile && user.id != null ? (
+        <ProfileEditPanel
+          open={editOpen}
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSave={() => {
+            setEditOpen(false);
+            onToast("Profile updated.");
+          }}
+          onUpdateUser={onUpdateUser}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function ProfileStatsBar({ stats }) {
+  const barRef = useRef(null);
+  const items = [
+    ["Agents", stats?.agents ?? 0],
+    ["Downloads", stats?.downloads ?? 0],
+    ["Endorsements", stats?.endorsements ?? 0],
+    ["Collections", stats?.collections ?? 0],
+  ];
+
+  return (
+    <div className="profile-stats-bar profile-reveal will-animate" ref={barRef}>
+      {items.map(([label, value]) => (
+        <div className="profile-stat-block" key={label}>
+          <strong>
+            <CountValue value={value} />
+          </strong>
+          <span>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProfileEditPanel({ open, user, onClose, onSave, onUpdateUser }) {
+  const [draft, setDraft] = useState({
+    name: user.name,
+    handle: user.handle,
+    bio: user.bio,
+    location: user.location,
+    website: user.website,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft({
+      name: user.name,
+      handle: user.handle,
+      bio: user.bio,
+      location: user.location,
+      website: user.website,
+    });
+  }, [open, user]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const privacyToggles = [
+    ["showLocation", "Show location"],
+    ["showWebsite", "Show website"],
+    ["showOrganizations", "Show organizations"],
+    ["showJoinDate", "Show join date"],
+    ["showStats", "Show stats"],
+    ["showActivity", "Show activity"],
+  ];
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleSave(event) {
+    event.preventDefault();
+    void (async () => {
+      await onUpdateUser({
+        name: draft.name.trim() || user.name,
+        handle: draft.handle.trim() || user.handle,
+        bio: draft.bio.trim(),
+        location: draft.location.trim(),
+        website: draft.website.trim(),
+      });
+      onSave();
+    })();
+  }
+
+  return (
+    <>
+      <button className="profile-edit-backdrop" type="button" aria-label="Close edit panel" onClick={onClose} />
+      <aside className="profile-edit-panel">
+        <button className="profile-edit-close" type="button" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+
+        <form className="profile-edit-form" onSubmit={handleSave}>
+          <div className="profile-edit-section">
+            <span className="profile-edit-label">Identity</span>
+            <FloatingField active={Boolean(draft.name)} delay={0} label="Name">
+              <input
+                value={draft.name}
+                onChange={(event) => updateDraft("name", event.target.value)}
+                placeholder="Your name"
+              />
+            </FloatingField>
+            <FloatingField active={Boolean(draft.handle)} delay={40} label="Handle">
+              <input
+                value={draft.handle}
+                onChange={(event) => updateDraft("handle", event.target.value)}
+                placeholder="@samir"
+              />
+            </FloatingField>
+            <FloatingField active className="textarea-field" delay={80} label="Bio">
+              <textarea
+                value={draft.bio}
+                onChange={(event) => updateDraft("bio", event.target.value)}
+                placeholder="Tell people what you build"
+              />
+            </FloatingField>
+            <FloatingField active={Boolean(draft.location)} delay={120} label="Location">
+              <input
+                value={draft.location}
+                onChange={(event) => updateDraft("location", event.target.value)}
+                placeholder="City, Country"
+              />
+            </FloatingField>
+            <FloatingField active={Boolean(draft.website)} delay={160} label="Website">
+              <input
+                value={draft.website}
+                onChange={(event) => updateDraft("website", event.target.value)}
+                placeholder="https://yoursite.dev"
+              />
+            </FloatingField>
+          </div>
+
+          <div className="profile-edit-section">
+            <span className="profile-edit-label">Privacy</span>
+            <div className="profile-privacy-list">
+              {privacyToggles.map(([key, label]) => (
+                <label className="profile-privacy-toggle" key={key}>
+                  <span>{label}</span>
+                  <button
+                    aria-checked={Boolean(user.settings?.[key])}
+                    className={
+                      user.settings?.[key] ? "public-switch is-public" : "public-switch"
+                    }
+                    role="switch"
+                    type="button"
+                    onClick={() =>
+                      onUpdateUser({
+                        settings: { [key]: !user.settings?.[key] },
+                      })
+                    }
+                  >
+                    <span />
+                  </button>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <button className="primary-btn profile-edit-save" type="submit">
+            Save
+          </button>
+        </form>
+      </aside>
+    </>
   );
 }
 
