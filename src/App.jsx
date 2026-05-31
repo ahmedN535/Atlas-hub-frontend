@@ -20,7 +20,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { categoryMeta, mockAgents } from "./data/mockAgents.js";
+import { categoryMeta } from "./data/mockAgents.js";
 import {
   getAgent,
   getAgents,
@@ -45,7 +45,6 @@ const uploadSubtitleWords =
 const descriptionLimit = 300;
 
 function normalizeAgent(agent) {
-  const idNumber = Number(agent.id) || Math.floor(Math.random() * 10000);
   return {
     id: agent.id,
     name: agent.name || agent.title || "Untitled agent",
@@ -57,9 +56,9 @@ function normalizeAgent(agent) {
     is_public: agent.is_public ?? true,
     created_at: agent.created_at || new Date().toISOString(),
     team: agent.team || "Atlas contributor",
-    endorsements: Number(agent.endorsements ?? agent.review_count ?? 12 + ((idNumber * 7) % 46)),
-    downloads: Number(agent.downloads ?? 160 + ((idNumber * 29) % 1200)),
-    featured: Boolean(agent.featured ?? idNumber % 3 === 0),
+    endorsements: Number(agent.endorsements ?? agent.review_count ?? 0),
+    downloads: Number(agent.downloads ?? 0),
+    featured: Boolean(agent.featured ?? false),
     similarity: agent.similarity,
     indexed_text: agent.indexed_text,
     embedding_model: agent.embedding_model,
@@ -318,7 +317,7 @@ export default function App() {
   const [screenTransition, setScreenTransition] = useState("screen-enter");
   const [scrolled, setScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [agents, setAgents] = useState(() => mockAgents.map(normalizeAgent));
+  const [agents, setAgents] = useState([]);
   const [apiState, setApiState] = useState({
     status: "loading",
     message: "Connecting to backend",
@@ -526,9 +525,10 @@ export default function App() {
         setApiState({ status: "live", message: `Live backend: ${getApiBaseLabel()}` });
       } catch (error) {
         if (ignore) return;
+        setAgents([]);
         setApiState({
-          status: "demo",
-          message: `Demo data active. ${error.message}`,
+          status: "error",
+          message: `Backend unavailable. ${error.message}`,
         });
       }
     }
@@ -560,7 +560,7 @@ export default function App() {
         setSearchState({
           status: "fallback",
           results: null,
-          message: `Local filtering active. ${error.message}`,
+          message: `Semantic search unavailable. Showing loaded agents filtered locally. ${error.message}`,
         });
       }
     }, 450);
@@ -574,13 +574,18 @@ export default function App() {
   }, [agents]);
 
   const filteredAgents = useMemo(() => {
-    const base = searchState.results || localSearch(agents, query);
+    const hasBackendRankedResults = Array.isArray(searchState.results);
+    const base = hasBackendRankedResults ? searchState.results : localSearch(agents, query);
     const filtered = base.filter((agent) => {
       if (category !== "all" && agent.category !== category) return false;
       if (model !== "all" && agent.model !== model) return false;
       if (publicOnly && agent.is_public === false) return false;
       return true;
     });
+
+    if (hasBackendRankedResults && sortBy === "recommended") {
+      return filtered;
+    }
 
     return [...filtered].sort((a, b) => {
       if (sortBy === "newest") return new Date(b.created_at) - new Date(a.created_at);
@@ -591,7 +596,7 @@ export default function App() {
     });
   }, [agents, category, model, publicOnly, query, searchState.results, sortBy]);
 
-  const shelves = useMemo(() => buildShelves(filteredAgents, Boolean(searchState.results)), [
+  const shelves = useMemo(() => buildShelves(filteredAgents, Array.isArray(searchState.results)), [
     filteredAgents,
     searchState.results,
   ]);
@@ -692,6 +697,7 @@ export default function App() {
               setQuery={setQuery}
               searchState={searchState}
               apiState={apiState}
+              totalAgentCount={agents.length}
               onOpenAgent={openAgent}
               onUpload={() => navigate("upload")}
               onToast={showToast}
@@ -744,7 +750,11 @@ function Nav({ screen, onNavigate, onUpload, apiState, scrolled, scrollProgress 
         </button>
         <span className={`connection-pill ${apiState.status}`}>
           <Cloud size={14} />
-          {apiState.status === "live" ? "Backend live" : "Demo data"}
+          {apiState.status === "live"
+            ? "Backend live"
+            : apiState.status === "loading"
+              ? "Connecting"
+              : "Backend error"}
         </span>
         <button className="primary-btn compact" type="button" onClick={onUpload}>
           <Upload size={16} />
@@ -958,6 +968,7 @@ function Browse({
   setQuery,
   searchState,
   apiState,
+  totalAgentCount,
   onOpenAgent,
   onUpload,
   onToast,
@@ -1296,11 +1307,17 @@ function Browse({
             {searchState.message}
           </span>
         ) : null}
-        <span className="result-count">{agents.length} agents</span>
+        <span className="result-count">{totalAgentCount} agents</span>
       </div>
 
       {apiState.status === "loading" ? (
         <BrowseLoadingShelf />
+      ) : apiState.status === "error" && !shelves.length ? (
+        <div className="empty-state error-state">
+          <Database className="empty-state-icon" size={32} />
+          <h3>Unable to load agents</h3>
+          <p>{apiState.message}</p>
+        </div>
       ) : shelves.length ? (
         <div className="shelf-stack">
           {shelves.map((shelf, index) => (
@@ -1396,6 +1413,9 @@ function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
 
 function AgentCard({ agent, index, onOpen }) {
   const [transform, setTransform] = useState(undefined);
+  const similarity = Number(agent.similarity);
+  const hasSimilarity = Number.isFinite(similarity);
+  const matchPercent = Math.round(Math.max(0, Math.min(1, similarity)) * 100);
 
   const handleMouseMove = useCallback((event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1443,7 +1463,12 @@ function AgentCard({ agent, index, onOpen }) {
         <span className="agent-icon">
           <FileCode2 size={19} />
         </span>
-        {agent.featured ? (
+        {hasSimilarity ? (
+          <span className="mini-badge match-badge">
+            <Search size={12} />
+            {matchPercent}% match
+          </span>
+        ) : agent.featured ? (
           <span className="mini-badge">
             <Star size={12} />
             Featured
@@ -1457,11 +1482,14 @@ function AgentCard({ agent, index, onOpen }) {
         <span>{agent.model}</span>
       </span>
       <span className="agent-card-footer">
-        <span>
+        <span className="agent-file-name" title={agent.file_name}>
+          <FileCode2 size={13} />
+          {agent.file_name}
+        </span>
+        <span title={`${formatNumber(agent.downloads)} downloads`}>
           <Download size={13} />
           {agent.downloads}
         </span>
-        <span>{formatDate(agent.created_at)}</span>
       </span>
     </button>
   );
@@ -2677,11 +2705,11 @@ function buildShelves(agents, hasSearchResults) {
   const uniqueById = (items) => Array.from(new Map(items.map((agent) => [agent.id, agent])).values());
 
   if (hasSearchResults) {
-    shelves.push({
+    return [{
       title: "Best matches",
-      subtitle: "Ranked by semantic relevance when the backend search is available.",
+      subtitle: "Backend-ranked semantic matches, shown in the order returned by search.",
       agents: agents.slice(0, 10),
-    });
+    }];
   }
 
   shelves.push({

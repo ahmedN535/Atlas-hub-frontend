@@ -439,6 +439,13 @@ body.custom-cursor-drop-active .custom-cursor-ring {
   background: rgba(255, 255, 255, 0.055);
 }
 
+.connection-pill.error,
+.info-pill.error {
+  color: var(--red);
+  border-color: rgba(255, 141, 141, 0.24);
+  background: var(--red-soft);
+}
+
 .info-pill.loading {
   color: var(--blue);
   border-color: rgba(130, 185, 255, 0.22);
@@ -1254,11 +1261,17 @@ input::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
   padding: 4px 7px;
   border-radius: var(--radius-nav);
   color: var(--muted);
   background: rgba(255, 255, 255, 0.06);
   font-size: 0.74rem;
+}
+
+.match-badge {
+  color: var(--green);
+  background: var(--green-soft);
 }
 
 .agent-card strong {
@@ -1314,8 +1327,16 @@ input::placeholder {
 
 .agent-card-footer {
   align-self: end;
+  min-width: 0;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+.agent-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .loading-shelf {
