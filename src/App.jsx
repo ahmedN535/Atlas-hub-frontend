@@ -22,11 +22,12 @@ import {
 } from "lucide-react";
 import { categoryMeta } from "./data/mockAgents.js";
 import {
+  analyzeAgent,
   getAgent,
   getAgents,
   getApiBaseLabel,
+  publishAgent,
   searchAgents,
-  uploadAgent,
 } from "./api/agents.js";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
@@ -43,6 +44,84 @@ const uploadSubtitleWords =
     " ",
   );
 const descriptionLimit = 300;
+const semanticMatchThreshold = 0.6;
+const semanticMatchThresholdLabel = `${Math.round(semanticMatchThreshold * 100)}%`;
+const uploadMetadataFields = [
+  "toolsIntegrations",
+  "prerequisites",
+  "inputFormat",
+  "outputFormat",
+  "useCases",
+  "examplePrompts",
+  "limitations",
+  "whenToUse",
+  "whenNotToUse",
+  "setupInstructions",
+  "expectedUsers",
+  "tags",
+];
+const uploadMetadataFieldConfig = [
+  {
+    field: "toolsIntegrations",
+    label: "Tools / integrations",
+    placeholder: "GitHub, Slack, Jira, browser, database access",
+  },
+  {
+    field: "prerequisites",
+    label: "Prerequisites",
+    placeholder: "Required accounts, model features, permissions, or files",
+  },
+  {
+    field: "inputFormat",
+    label: "Input format",
+    placeholder: "Diff, markdown brief, CSV, support ticket, transcript",
+  },
+  {
+    field: "outputFormat",
+    label: "Output format",
+    placeholder: "Prioritized findings, JSON, checklist, summary, report",
+  },
+  {
+    field: "useCases",
+    label: "Use cases",
+    placeholder: "One use case per line",
+  },
+  {
+    field: "examplePrompts",
+    label: "Example prompts / queries",
+    placeholder: "Review this pull request for bugs and missing tests",
+  },
+  {
+    field: "limitations",
+    label: "Limitations",
+    placeholder: "Known weak spots, unsupported inputs, edge cases",
+  },
+  {
+    field: "whenToUse",
+    label: "When to use",
+    placeholder: "Best-fit situations for this agent",
+  },
+  {
+    field: "whenNotToUse",
+    label: "When not to use",
+    placeholder: "Situations where a human or another workflow is better",
+  },
+  {
+    field: "setupInstructions",
+    label: "Setup instructions",
+    placeholder: "Configuration, environment, or installation notes",
+  },
+  {
+    field: "expectedUsers",
+    label: "Expected users / team",
+    placeholder: "Engineering, support, finance, analysts, managers",
+  },
+  {
+    field: "tags",
+    label: "Tags / keywords",
+    placeholder: "code review, pull request, tests, bugs",
+  },
+];
 
 function normalizeAgent(agent) {
   return {
@@ -64,6 +143,12 @@ function normalizeAgent(agent) {
     embedding_model: agent.embedding_model,
     media: Array.isArray(agent.media) ? agent.media : [],
   };
+}
+
+function getMatchScore(agent) {
+  const similarity = Number(agent?.similarity);
+  if (!Number.isFinite(similarity)) return 0;
+  return Math.max(0, Math.min(1, similarity));
 }
 
 function localSearch(agents, query) {
@@ -140,6 +225,24 @@ function typewriterFill(setter, text, ms = 600) {
       }
     }, stepMs);
   });
+}
+
+function getAnalysisData(result) {
+  return result?.data || result || {};
+}
+
+function toDisplayList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join("\n");
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return value == null ? "" : String(value);
+}
+
+function getFirstValue(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return "";
 }
 
 function parseStatValue(value) {
@@ -542,24 +645,53 @@ export default function App() {
   useEffect(() => {
     const cleanQuery = query.trim();
     if (screen !== "browse" || cleanQuery.length < 3) {
-      setSearchState({ status: "idle", results: null, message: "" });
+      setSearchState({
+        status: "idle",
+        results: null,
+        message: "",
+        lowConfidence: false,
+        omittedCount: 0,
+        totalResults: 0,
+      });
       return undefined;
     }
 
     const timer = window.setTimeout(async () => {
-      setSearchState((current) => ({ ...current, status: "loading", message: "Searching" }));
+      setSearchState((current) => ({
+        ...current,
+        status: "loading",
+        message: "Searching",
+        lowConfidence: false,
+        omittedCount: 0,
+      }));
       try {
         const data = await searchAgents(cleanQuery);
         const results = Array.isArray(data?.results) ? data.results.map(normalizeAgent) : [];
+        const strongResults = results.filter(
+          (agent) => getMatchScore(agent) >= semanticMatchThreshold,
+        );
+        const lowConfidence = results.length > 0 && strongResults.length === 0;
+        const displayedResults = lowConfidence ? results : strongResults;
+        const omittedCount = Math.max(0, results.length - displayedResults.length);
         setSearchState({
           status: "live",
-          results,
-          message: "Semantic search results",
+          results: displayedResults,
+          lowConfidence,
+          omittedCount,
+          totalResults: results.length,
+          message: lowConfidence
+            ? `No strong matches above ${semanticMatchThresholdLabel}. Showing closest results.`
+            : omittedCount
+              ? `Showing matches above ${semanticMatchThresholdLabel}. ${omittedCount} lower-confidence hidden.`
+              : "Semantic search results",
         });
       } catch (error) {
         setSearchState({
           status: "fallback",
           results: null,
+          lowConfidence: false,
+          omittedCount: 0,
+          totalResults: 0,
           message: `Semantic search unavailable. Showing loaded agents filtered locally. ${error.message}`,
         });
       }
@@ -596,10 +728,10 @@ export default function App() {
     });
   }, [agents, category, model, publicOnly, query, searchState.results, sortBy]);
 
-  const shelves = useMemo(() => buildShelves(filteredAgents, Array.isArray(searchState.results)), [
-    filteredAgents,
-    searchState.results,
-  ]);
+  const shelves = useMemo(
+    () => buildShelves(filteredAgents, Array.isArray(searchState.results), searchState.lowConfidence),
+    [filteredAgents, searchState.results, searchState.lowConfidence],
+  );
 
   function navigate(nextScreen) {
     changeScreen(nextScreen);
@@ -1310,6 +1442,21 @@ function Browse({
         <span className="result-count">{totalAgentCount} agents</span>
       </div>
 
+      {searchState.lowConfidence ? (
+        <div className="match-quality-callout">
+          <span className="match-quality-icon">
+            <Search size={18} />
+          </span>
+          <span>
+            <strong>No high-confidence match found</strong>
+            <small>
+              We could not find anything above {semanticMatchThresholdLabel}, but these are the
+              closest backend-ranked agents and may still be useful.
+            </small>
+          </span>
+        </div>
+      ) : null}
+
       {apiState.status === "loading" ? (
         <BrowseLoadingShelf />
       ) : apiState.status === "error" && !shelves.length ? (
@@ -1415,7 +1562,7 @@ function AgentCard({ agent, index, onOpen }) {
   const [transform, setTransform] = useState(undefined);
   const similarity = Number(agent.similarity);
   const hasSimilarity = Number.isFinite(similarity);
-  const matchPercent = Math.round(Math.max(0, Math.min(1, similarity)) * 100);
+  const matchPercent = Math.round(getMatchScore(agent) * 100);
 
   const handleMouseMove = useCallback((event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2159,12 +2306,25 @@ function UploadPage({ onUploaded, onBack, onToast }) {
     userManual: "",
     category: "general",
     model: "",
+    toolsIntegrations: "",
+    prerequisites: "",
+    inputFormat: "",
+    outputFormat: "",
+    useCases: "",
+    examplePrompts: "",
+    limitations: "",
+    whenToUse: "",
+    whenNotToUse: "",
+    setupInstructions: "",
+    expectedUsers: "",
+    tags: "",
     isPublic: true,
   });
   const [file, setFile] = useState(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [state, setState] = useState({ status: "idle", message: "" });
   const [magicState, setMagicState] = useState({ status: "idle", message: "" });
+  const [analysisFeedback, setAnalysisFeedback] = useState({ warnings: [], missingFields: [] });
   const [magicVisible, setMagicVisible] = useState(false);
 
   const detailsDone = Boolean(form.title.trim() && form.userDescription.trim());
@@ -2252,12 +2412,14 @@ function UploadPage({ onUploaded, onBack, onToast }) {
     setFile(nextFile);
     setState({ status: "idle", message: "" });
     setMagicState({ status: "idle", message: "" });
+    setAnalysisFeedback({ warnings: [], missingFields: [] });
   }
 
   function clearFile() {
     setFile(null);
     setState({ status: "idle", message: "" });
     setMagicState({ status: "idle", message: "" });
+    setAnalysisFeedback({ warnings: [], missingFields: [] });
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -2265,40 +2427,78 @@ function UploadPage({ onUploaded, onBack, onToast }) {
     fileInputRef.current?.click();
   }
 
+  function buildAgentPayload() {
+    const payload = new FormData();
+    payload.append("agentFile", file);
+    payload.append("title", form.title.trim());
+    payload.append("category", form.category);
+    payload.append("model", form.model.trim());
+    payload.append("description", form.userDescription.trim());
+    payload.append("manual", form.userManual.trim());
+    payload.append("isPublic", String(form.isPublic));
+
+    uploadMetadataFields.forEach((field) => {
+      payload.append(field, String(form[field] || "").trim());
+    });
+
+    return payload;
+  }
+
+  function hydrateAnalysisFields(rawData) {
+    const response = rawData || {};
+    const data = getAnalysisData(rawData);
+    const nextValues = {
+      title: getFirstValue(data, ["title", "name"]),
+      category: getFirstValue(data, ["category"]),
+      model: getFirstValue(data, ["model"]),
+      userDescription: getFirstValue(data, ["description", "shortDescription", "userDescription"]),
+      userManual: getFirstValue(data, ["manual", "setupManual", "userManual"]),
+      toolsIntegrations: getFirstValue(data, ["toolsIntegrations", "tools", "integrations"]),
+      prerequisites: getFirstValue(data, ["prerequisites"]),
+      inputFormat: getFirstValue(data, ["inputFormat", "inputs"]),
+      outputFormat: getFirstValue(data, ["outputFormat", "outputs"]),
+      useCases: getFirstValue(data, ["useCases"]),
+      examplePrompts: getFirstValue(data, ["examplePrompts", "exampleQueries", "exampleSearchQueries"]),
+      limitations: getFirstValue(data, ["limitations"]),
+      whenToUse: getFirstValue(data, ["whenToUse"]),
+      whenNotToUse: getFirstValue(data, ["whenNotToUse"]),
+      setupInstructions: getFirstValue(data, ["setupInstructions", "setup"]),
+      expectedUsers: getFirstValue(data, ["expectedUsers", "expectedUsersTeam", "targetUsers"]),
+      tags: getFirstValue(data, ["tags", "keywords"]),
+    };
+
+    Object.entries(nextValues).forEach(([field, value]) => {
+      const formattedValue = toDisplayList(value);
+      if (formattedValue) updateField(field, formattedValue);
+    });
+
+    const warnings =
+      data.warnings || data.metadataWarnings || data.suggestedFixes || response.warnings || [];
+    const missingFields =
+      data.missingFields || data.missing_fields || response.missingFields || response.missing_fields || [];
+
+    setAnalysisFeedback({
+      warnings: Array.isArray(warnings) ? warnings : [],
+      missingFields: Array.isArray(missingFields) ? missingFields : [],
+    });
+  }
+
   async function handleMagic() {
-    if (!file) return;
+    if (!file) {
+      setMagicState({ status: "error", message: "Choose an agent file before analyzing." });
+      return;
+    }
 
-    setMagicState({ status: "loading", message: "Reading file..." });
+    setMagicState({ status: "loading", message: "Analyzing agent metadata..." });
+    setAnalysisFeedback({ warnings: [], missingFields: [] });
     try {
-      const payload = new FormData();
-      payload.append("agentFile", file);
-      payload.append("useAiGeneration", "true");
-
-      const title = form.title.trim() || file.name.replace(/\.[^/.]+$/, "");
-      if (title) payload.append("title", title);
-      if (form.category) payload.append("category", form.category);
-
-      const result = await uploadAgent(payload);
-
-      if (result?.data?.title && !form.title.trim()) updateField("title", result.data.title);
-      await Promise.all([
-        result?.data?.description
-          ? typewriterFill(
-              (value) => updateField("userDescription", value),
-              String(result.data.description).slice(0, descriptionLimit),
-              600,
-            )
-          : Promise.resolve(),
-        result?.data?.manual
-          ? typewriterFill((value) => updateField("userManual", value), result.data.manual, 600)
-          : Promise.resolve(),
-      ]);
-
-      setMagicState({ status: "done", message: "Fields filled from your file." });
+      const result = await analyzeAgent(buildAgentPayload());
+      hydrateAnalysisFields(result);
+      setMagicState({ status: "done", message: "Analysis complete. Review the suggested fields." });
     } catch (error) {
       setMagicState({
         status: "error",
-        message: error.message || "Magic failed - fill fields manually.",
+        message: error.message || "Analysis failed - fill fields manually.",
       });
     }
   }
@@ -2314,18 +2514,9 @@ function UploadPage({ onUploaded, onBack, onToast }) {
       return;
     }
 
-    const payload = new FormData();
-    payload.append("agentFile", file);
-    payload.append("title", form.title.trim());
-    payload.append("userDescription", form.userDescription.trim());
-    payload.append("userManual", form.userManual.trim());
-    payload.append("category", form.category);
-    payload.append("model", form.model.trim());
-    payload.append("isPublic", String(form.isPublic));
-
-    setState({ status: "loading", message: "Uploading agent" });
+    setState({ status: "loading", message: "Publishing agent" });
     try {
-      const result = await uploadAgent(payload);
+      const result = await publishAgent(buildAgentPayload());
       const uploadedAgent = {
         id: result?.data?.id || Date.now(),
         name: result?.data?.title || form.title,
@@ -2422,7 +2613,7 @@ function UploadPage({ onUploaded, onBack, onToast }) {
                 ) : (
                   <Sparkles size={16} />
                 )}
-                {magicState.status === "loading" ? "Reading file..." : "Magic"}
+                {magicState.status === "loading" ? "Analyzing..." : "Magic"}
               </button>
               {magicState.status === "done" || magicState.status === "error" ? (
                 <p
@@ -2432,6 +2623,31 @@ function UploadPage({ onUploaded, onBack, onToast }) {
                 >
                   {magicState.message}
                 </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {analysisFeedback.warnings.length || analysisFeedback.missingFields.length ? (
+            <div className="analysis-feedback form-field-animate" style={{ "--field-delay": "160ms" }}>
+              {analysisFeedback.warnings.length ? (
+                <div>
+                  <strong>Review suggested fixes</strong>
+                  <ul>
+                    {analysisFeedback.warnings.map((warning, index) => (
+                      <li key={`warning-${index}`}>{toDisplayList(warning)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {analysisFeedback.missingFields.length ? (
+                <div>
+                  <strong>Missing useful metadata</strong>
+                  <ul>
+                    {analysisFeedback.missingFields.map((field, index) => (
+                      <li key={`missing-${index}`}>{toDisplayList(field)}</li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -2511,7 +2727,32 @@ function UploadPage({ onUploaded, onBack, onToast }) {
             />
           </FloatingField>
 
-          <div className="visibility-toggle form-field-animate" style={{ "--field-delay": "500ms" }}>
+          <section className="metadata-section form-field-animate" style={{ "--field-delay": "500ms" }}>
+            <div className="metadata-section-heading">
+              <span>Search metadata</span>
+              <small>Optional fields that help Atlas rank and explain this agent.</small>
+            </div>
+
+            <div className="metadata-field-grid">
+              {uploadMetadataFieldConfig.map((item, index) => (
+                <FloatingField
+                  active={Boolean(form[item.field])}
+                  className="textarea-field compact-textarea"
+                  delay={540 + index * 35}
+                  key={item.field}
+                  label={item.label}
+                >
+                  <textarea
+                    value={form[item.field]}
+                    onChange={(event) => updateField(item.field, event.target.value)}
+                    placeholder={item.placeholder}
+                  />
+                </FloatingField>
+              ))}
+            </div>
+          </section>
+
+          <div className="visibility-toggle form-field-animate" style={{ "--field-delay": "980ms" }}>
             <span>Private</span>
             <button
               aria-checked={form.isPublic}
@@ -2698,7 +2939,7 @@ function Toast({ message, visible }) {
   );
 }
 
-function buildShelves(agents, hasSearchResults) {
+function buildShelves(agents, hasSearchResults, lowConfidence = false) {
   if (!agents.length) return [];
 
   const shelves = [];
@@ -2706,8 +2947,10 @@ function buildShelves(agents, hasSearchResults) {
 
   if (hasSearchResults) {
     return [{
-      title: "Best matches",
-      subtitle: "Backend-ranked semantic matches, shown in the order returned by search.",
+      title: lowConfidence ? "Closest matches" : "Best matches",
+      subtitle: lowConfidence
+        ? `No result cleared ${semanticMatchThresholdLabel}; these are the closest backend-ranked agents.`
+        : `Only backend-ranked matches at ${semanticMatchThresholdLabel} or higher are shown.`,
       agents: agents.slice(0, 10),
     }];
   }

@@ -35,7 +35,14 @@ export function searchAgents(query) {
   });
 }
 
-export function uploadAgent(formData) {
+export function analyzeAgent(formData) {
+  return request("/api/agents/analyze", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function publishAgent(formData) {
   return request("/api/agents/upload", {
     method: "POST",
     body: formData,
