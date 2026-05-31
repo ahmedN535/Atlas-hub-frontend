@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Boxes,
+  Building2,
   Calendar,
   Camera,
   Check,
@@ -10,12 +11,15 @@ import {
   Cloud,
   Database,
   Download,
+  ExternalLink,
   FileCode2,
   Folder,
   Globe,
   Info,
   Layers3,
   LayoutGrid,
+  List,
+  Lock,
   Loader2,
   LockKeyhole,
   LogOut,
@@ -28,22 +32,40 @@ import {
   Sparkles,
   Star,
   ThumbsUp,
+  Trash2,
   Upload,
   User,
   Users,
   X,
+  Rss,
 } from "lucide-react";
 import { categoryMeta } from "./data/mockAgents.js";
 import {
   analyzeAgent,
+  addOrgMember,
+  createOrganization,
+  deleteAgent,
+  followUser,
+  getFollowingFeed,
   getAgent,
   getAgents,
   getAgentReviews,
   getApiBaseLabel,
+  getMyAgents,
+  getMyOrganizations,
+  getOrganization,
+  getUserFollowers,
+  getUserFollowing,
   publishAgent,
   saveAgentReview,
   searchAgents,
   setAuthTokenGetter,
+  setCurrentUserId,
+  unfollowUser,
+  updateAgentVisibility,
+  updateOrganization,
+  updateOrgMemberRole,
+  removeOrgMember,
 } from "./api/agents.js";
 import AuthModal from "./components/AuthModal.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
@@ -54,6 +76,21 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 });
 
 const modelOptions = ["all", "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"];
+const DEV_USERS = [
+  { id: 1, name: "Ada", initials: "A" },
+  { id: 2, name: "Grace", initials: "G" },
+  { id: 3, name: "Alan", initials: "AL" },
+];
+const visibilityOptions = [
+  { value: "public", label: "Public", description: "Visible to everyone" },
+  {
+    value: "followers_only",
+    label: "Followers only",
+    description: "Only your followers can see this",
+  },
+  { value: "private", label: "Private", description: "Only you can see this" },
+  { value: "org_only", label: "Org only", description: "Only members of the organization can see this" },
+];
 const screenTransitionMs = 260;
 const heroTitleWords = "The agent registry for reusable AI agents".split(" ");
 const uploadTitleWords = "Publish an agent".split(" ");
@@ -212,7 +249,83 @@ const uploadMetadataFieldConfig = [
   },
 ];
 
+function getDevUser(id) {
+  return DEV_USERS.find((user) => String(user.id) === String(id)) || DEV_USERS[0];
+}
+
+function normalizeVisibility(agent) {
+  if (agent.visibility === "followers") return "followers_only";
+  if (agent.visibility) return agent.visibility;
+  return agent.is_public === false || agent.isPublic === false ? "private" : "public";
+}
+
+function getVisibilityConfig(visibility) {
+  return visibilityOptions.find((option) => option.value === visibility) || visibilityOptions[0];
+}
+
+function getVisibilityLabel(visibility) {
+  return getVisibilityConfig(visibility).label;
+}
+
+function getVisibilityDescription(visibility) {
+  return getVisibilityConfig(visibility).description;
+}
+
+function isAgentOwner(agent, userId) {
+  if (!agent?.uploader_id || userId == null) return false;
+  return String(agent.uploader_id) === String(userId);
+}
+
+function getOrgInitials(name) {
+  return String(name || "Org")
+    .trim()
+    .split(/\s+/)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function canManageOrganization(org) {
+  const role = org?.current_user_role || org?.role;
+  return role === "owner" || role === "admin";
+}
+
+function normalizeOrganization(org) {
+  return {
+    id: org.id,
+    name: org.name || "Untitled organization",
+    slug: org.slug || slugFromName(org.name || "organization"),
+    description: org.description || "",
+    avatar_url: org.avatar_url || "",
+    created_by: org.created_by,
+    current_user_role: org.current_user_role || org.role || "member",
+    member_count: Number(org.member_count ?? org.members?.length ?? 0),
+    agent_count: Number(org.agent_count ?? org.agents?.length ?? 0),
+    members: Array.isArray(org.members) ? org.members : [],
+    agents: Array.isArray(org.agents) ? org.agents.map(normalizeAgent) : [],
+  };
+}
+
+function slugFromName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function extractAgentList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.agents)) return data.agents;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
+}
+
 function normalizeAgent(agent) {
+  const visibility = normalizeVisibility(agent);
   return {
     id: agent.id,
     name: agent.name || agent.title || "Untitled agent",
@@ -221,10 +334,12 @@ function normalizeAgent(agent) {
     category: agent.category || "general",
     model: agent.model || "unknown",
     file_name: agent.file_name || agent.fileName || "agent.md",
-    is_public: agent.is_public ?? true,
+    visibility,
+    org_id: agent.org_id ?? agent.orgId ?? null,
+    is_public: agent.is_public ?? agent.isPublic ?? visibility === "public",
     created_at: agent.created_at || new Date().toISOString(),
-    team: agent.team || "Atlas contributor",
-    uploader_id: agent.uploader_id ?? agent.uploaderId ?? null,
+    team: agent.team || agent.uploader_name || agent.uploaderName || agent.user_name || "Atlas contributor",
+    uploader_id: agent.uploader_id ?? agent.uploaderId ?? agent.user_id ?? agent.userId ?? null,
     endorsements: Number(agent.endorsements ?? agent.review_count ?? 0),
     downloads: Number(agent.downloads ?? 0),
     featured: Boolean(agent.featured ?? false),
@@ -272,7 +387,14 @@ function titleCase(value) {
 
 function getInitialScreen() {
   const hash = window.location.hash.replace("#", "");
-  return hash === "browse" || hash === "agent" || hash === "upload" || hash === "profile"
+  return hash === "browse" ||
+    hash === "agent" ||
+    hash === "upload" ||
+    hash === "profile" ||
+    hash === "my-agents" ||
+    hash === "following" ||
+    hash === "organizations" ||
+    hash === "org-detail"
     ? hash
     : "home";
 }
@@ -283,6 +405,10 @@ function getScreenUrl(screen) {
     agent: "#agent",
     upload: "#upload",
     profile: "#profile",
+    "my-agents": "#my-agents",
+    following: "#following",
+    organizations: "#organizations",
+    "org-detail": "#org-detail",
   };
   const hash = hashMap[screen] || "";
   return `${window.location.pathname}${window.location.search}${hash}`;
@@ -598,8 +724,12 @@ export default function App() {
   const [publicOnly, setPublicOnly] = useState(true);
   const [searchState, setSearchState] = useState({ status: "idle", results: null, message: "" });
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [organizations, setOrganizations] = useState([]);
   const [profileUser, setProfileUser] = useState(null);
   const [currentUser, setCurrentUser] = useState(createDefaultCurrentUser);
+  const [devUserId, setDevUserId] = useState(1);
+  const [followedUsers, setFollowedUsers] = useState(() => new Set());
   const [landingQuery, setLandingQuery] = useState("");
   const [toast, setToast] = useState({ message: "", visible: false });
 
@@ -616,7 +746,29 @@ export default function App() {
   }, [authLoading]);
 
   useEffect(() => {
-    if (!profile) return;
+    setCurrentUserId(devUserId);
+
+    if (!import.meta.env.DEV) return;
+
+    const devUser = getDevUser(devUserId);
+    setCurrentUser((prev) => ({
+      ...prev,
+      id: devUser.id,
+      name: devUser.name,
+      handle: `@${devUser.name.toLowerCase()}`,
+      role: "Contributor",
+      joinedAt: prev.joinedAt || "2026-05-31",
+      stats: prev.stats || createDefaultCurrentUser().stats,
+    }));
+    setProfileUser((viewing) =>
+      viewing?.id != null && String(viewing.id) === String(devUser.id)
+        ? { ...viewing, id: devUser.id, name: devUser.name, handle: `@${devUser.name.toLowerCase()}` }
+        : viewing,
+    );
+  }, [devUserId]);
+
+  useEffect(() => {
+    if (!profile || import.meta.env.DEV) return;
     setCurrentUser((prev) => ({
       ...prev,
       id: profile.id ?? prev.id,
@@ -639,7 +791,7 @@ export default function App() {
   }, [profile]);
 
   useEffect(() => {
-    if (profile === null && !authLoadingActive) {
+    if (profile === null && !authLoadingActive && !import.meta.env.DEV) {
       setCurrentUser(createDefaultCurrentUser());
     }
   }, [profile, authLoadingActive]);
@@ -648,6 +800,35 @@ export default function App() {
     setAuthTokenGetter(getAccessToken);
     return () => setAuthTokenGetter(null);
   }, [getAccessToken]);
+
+  useEffect(() => {
+    if (currentUser.id == null) {
+      setOrganizations([]);
+      return undefined;
+    }
+
+    let ignore = false;
+
+    async function loadOrganizations() {
+      try {
+        const data = await getMyOrganizations();
+        if (ignore) return;
+        const nextOrganizations = extractAgentList(data).map(normalizeOrganization);
+        setOrganizations(nextOrganizations);
+        setCurrentUser((prev) => ({ ...prev, organizations: nextOrganizations }));
+      } catch {
+        if (ignore) return;
+        setOrganizations([]);
+        setCurrentUser((prev) => ({ ...prev, organizations: [] }));
+      }
+    }
+
+    loadOrganizations();
+
+    return () => {
+      ignore = true;
+    };
+  }, [currentUser.id, devUserId]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setIsMounted(true));
@@ -805,6 +986,12 @@ export default function App() {
   }, [changeScreen, profileUser, screen]);
 
   useEffect(() => {
+    if (screen === "org-detail" && !selectedOrg) {
+      changeScreen("organizations");
+    }
+  }, [changeScreen, screen, selectedOrg]);
+
+  useEffect(() => {
     function updateScrollState() {
       const top = window.scrollY || document.documentElement.scrollTop;
       const scrollable =
@@ -929,9 +1116,10 @@ export default function App() {
     const hasBackendRankedResults = Array.isArray(searchState.results);
     const base = hasBackendRankedResults ? searchState.results : localSearch(agents, query);
     const filtered = base.filter((agent) => {
+      if (agent.visibility === "private" && !isAgentOwner(agent, devUserId)) return false;
       if (category !== "all" && agent.category !== category) return false;
       if (model !== "all" && agent.model !== model) return false;
-      if (publicOnly && agent.is_public === false) return false;
+      if (publicOnly && agent.visibility !== "public") return false;
       return true;
     });
 
@@ -946,7 +1134,7 @@ export default function App() {
       if (sortBy === "similarity") return Number(b.similarity || 0) - Number(a.similarity || 0);
       return Number(b.featured) - Number(a.featured) || b.endorsements - a.endorsements;
     });
-  }, [agents, category, model, publicOnly, query, searchState.results, sortBy]);
+  }, [agents, category, devUserId, model, publicOnly, query, searchState.results, sortBy]);
 
   const shelves = useMemo(
     () => buildShelves(filteredAgents, Array.isArray(searchState.results), searchState.lowConfidence),
@@ -959,7 +1147,7 @@ export default function App() {
   }
 
   function requireAuth(action) {
-    if (profile) {
+    if (profile || (import.meta.env.DEV && currentUser.id != null)) {
       action();
       return;
     }
@@ -973,7 +1161,17 @@ export default function App() {
     } catch {
       // ignore — clear local state regardless
     }
-    setCurrentUser(createDefaultCurrentUser());
+    if (import.meta.env.DEV) {
+      const devUser = getDevUser(devUserId);
+      setCurrentUser((prev) => ({
+        ...prev,
+        id: devUser.id,
+        name: devUser.name,
+        handle: `@${devUser.name.toLowerCase()}`,
+      }));
+    } else {
+      setCurrentUser(createDefaultCurrentUser());
+    }
     setProfileUser(null);
     setSelectedAgent(null);
     showToast("Signed out.");
@@ -991,6 +1189,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (import.meta.env.DEV) return;
     if (authLoadingActive || profile || screen !== "upload") return;
     changeScreen("home");
     openAuthModal("sign-in");
@@ -1086,11 +1285,105 @@ export default function App() {
     }, screenTransitionMs + 20);
   }
 
+  function openOrganization(org) {
+    setSelectedOrg(normalizeOrganization(org));
+    if (screenRef.current !== "org-detail") {
+      navigate("org-detail");
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function closeOrganization() {
+    navigate("organizations");
+    window.setTimeout(() => {
+      setSelectedOrg(null);
+    }, screenTransitionMs + 20);
+  }
+
+  function syncOrganizations(nextOrganizations) {
+    setOrganizations(nextOrganizations);
+    setCurrentUser((prev) => ({ ...prev, organizations: nextOrganizations }));
+  }
+
   function addUploadedAgent(agent) {
     setAgents((current) => [
       normalizeAgent({ ...agent, team: currentUser.name, uploader_id: currentUser.id }),
       ...current,
     ]);
+  }
+
+  function handleDevUserChange(nextUserId) {
+    const nextUser = getDevUser(nextUserId);
+    setCurrentUserId(nextUser.id);
+    setDevUserId(nextUser.id);
+    showToast(`Switched to ${nextUser.name}`);
+  }
+
+  async function handleFollowUser(userId) {
+    if (userId == null) return;
+    const key = String(userId);
+    setFollowedUsers((current) => new Set(current).add(key));
+
+    try {
+      await followUser(userId);
+      showToast("Following user.");
+    } catch (error) {
+      setFollowedUsers((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      showToast("Could not follow user.");
+      throw error;
+    }
+  }
+
+  async function handleUnfollowUser(userId) {
+    if (userId == null) return;
+    const key = String(userId);
+    setFollowedUsers((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+
+    try {
+      await unfollowUser(userId);
+      showToast("Unfollowed user.");
+    } catch (error) {
+      setFollowedUsers((current) => new Set(current).add(key));
+      showToast(error?.message || "Could not unfollow user.");
+      throw error;
+    }
+  }
+
+  async function handleUpdateAgentVisibility(agentId, visibility, orgId = null) {
+    const previousAgents = agents;
+    const previousSelectedAgent = selectedAgent;
+
+    setAgents((current) =>
+      current.map((agent) =>
+        String(agent.id) === String(agentId)
+          ? normalizeAgent({ ...agent, visibility, org_id: orgId, is_public: visibility === "public" })
+          : agent,
+      ),
+    );
+    setSelectedAgent((current) =>
+      current && String(current.id) === String(agentId)
+        ? normalizeAgent({ ...current, visibility, org_id: orgId, is_public: visibility === "public" })
+        : current,
+    );
+
+    try {
+      await updateAgentVisibility(agentId, visibility, { org_id: orgId });
+      showToast(`Visibility updated to ${getVisibilityLabel(visibility)}.`);
+    } catch (error) {
+      setAgents(previousAgents);
+      setSelectedAgent(previousSelectedAgent);
+      showToast("Failed to update visibility.");
+      throw error;
+    }
   }
 
   const profileViewUser = isOwnProfile ? currentUser : profileUser;
@@ -1108,6 +1401,9 @@ export default function App() {
           onSignOut={handleSignOut}
           onOpenOwnProfile={openOwnProfile}
           onNavigateToBrowse={() => navigate("browse")}
+          onNavigateToMyAgents={() => navigate("my-agents")}
+          onNavigateToOrganizations={() => navigate("organizations")}
+          onNavigateToFollowing={() => navigate("following")}
           onToast={showToast}
           currentUser={currentUser}
           profile={profile}
@@ -1129,16 +1425,67 @@ export default function App() {
               agentCount={agents.length}
             />
           ) : screen === "upload" ? (
-            <UploadPage onUploaded={addUploadedAgent} onBack={closeUploadPage} onToast={showToast} />
+            <UploadPage
+              currentUser={currentUser}
+              onUploaded={addUploadedAgent}
+              onBack={closeUploadPage}
+              onToast={showToast}
+            />
+          ) : screen === "my-agents" ? (
+            <MyAgentsPage
+              currentUser={currentUser}
+              devUserId={devUserId}
+              onBack={() => navigate("browse")}
+              onNavigateToAgent={openAgent}
+              onToast={showToast}
+              onUpload={goToUpload}
+            />
+          ) : screen === "following" ? (
+            <FollowingFeedPage
+              currentUser={currentUser}
+              devUserId={devUserId}
+              followedUsers={followedUsers}
+              onBack={() => navigate("browse")}
+              onBrowse={() => navigate("browse")}
+              onFollow={handleFollowUser}
+              onNavigateToAgent={openAgent}
+              onToast={showToast}
+              onUnfollow={handleUnfollowUser}
+            />
+          ) : screen === "organizations" ? (
+            <OrganizationsPage
+              currentUser={currentUser}
+              devUserId={devUserId}
+              organizations={organizations}
+              onBack={() => navigate("browse")}
+              onOrganizationsChange={syncOrganizations}
+              onSelectOrg={openOrganization}
+              onToast={showToast}
+            />
+          ) : screen === "org-detail" && selectedOrg ? (
+            <OrgDetailPage
+              currentUser={currentUser}
+              devUserId={devUserId}
+              org={selectedOrg}
+              onBack={closeOrganization}
+              onNavigateToAgent={openAgent}
+              onOrganizationsChange={syncOrganizations}
+              onToast={showToast}
+            />
           ) : screen === "agent" && selectedAgent ? (
             <AgentPage
               agent={selectedAgent}
               allAgents={agents}
               currentUser={currentUser}
+              devUserId={devUserId}
+              followedUsers={followedUsers}
               onBack={closeAgent}
+              onFollow={handleFollowUser}
               onNavigateToAgent={openAgent}
               onOpenProfile={openProfile}
               onToast={showToast}
+              onUnfollow={handleUnfollowUser}
+              onUpdateVisibility={handleUpdateAgentVisibility}
             />
           ) : screen === "profile" && profileViewUser ? (
             <ProfilePage
@@ -1174,6 +1521,10 @@ export default function App() {
               onOpenAgent={openAgent}
               onUpload={goToUpload}
               onToast={showToast}
+              devUserId={devUserId}
+              followedUsers={followedUsers}
+              onFollow={handleFollowUser}
+              onUnfollow={handleUnfollowUser}
             />
           )}
         </main>
@@ -1189,8 +1540,30 @@ export default function App() {
         onSignInWithProvider={signInWithProvider}
       />
 
+      {import.meta.env.DEV ? (
+        <DevUserSelector activeUserId={devUserId} onChange={handleDevUserChange} />
+      ) : null}
+
       <Toast message={toast.message} visible={toast.visible} />
     </>
+  );
+}
+
+function DevUserSelector({ activeUserId, onChange }) {
+  return (
+    <div className="dev-user-selector" aria-label="Development user selector">
+      <span>Dev user:</span>
+      {DEV_USERS.map((user) => (
+        <button
+          className={String(activeUserId) === String(user.id) ? "dev-user-btn active" : "dev-user-btn"}
+          key={user.id}
+          type="button"
+          onClick={() => onChange(user.id)}
+        >
+          {user.initials}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1200,6 +1573,9 @@ function NavAvatarMenu({
   onOpenOwnProfile,
   onUpload,
   onNavigateToBrowse,
+  onNavigateToMyAgents,
+  onNavigateToOrganizations,
+  onNavigateToFollowing,
 }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
@@ -1293,6 +1669,39 @@ function NavAvatarMenu({
           <LayoutGrid size={15} />
           Browse agents
         </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onNavigateToMyAgents();
+            setOpen(false);
+          }}
+        >
+          <List size={15} />
+          My agents
+        </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onNavigateToOrganizations();
+            setOpen(false);
+          }}
+        >
+          <Building2 size={15} />
+          Organizations
+        </button>
+        <button
+          className="nav-dropdown-item"
+          type="button"
+          onClick={() => {
+            onNavigateToFollowing();
+            setOpen(false);
+          }}
+        >
+          <Rss size={15} />
+          Following feed
+        </button>
 
         <div className="nav-dropdown-divider" />
 
@@ -1320,6 +1729,9 @@ function Nav({
   onSignOut,
   onOpenOwnProfile,
   onNavigateToBrowse,
+  onNavigateToMyAgents,
+  onNavigateToOrganizations,
+  onNavigateToFollowing,
   onToast,
   currentUser,
   profile,
@@ -1329,7 +1741,14 @@ function Nav({
   scrolled,
   scrollProgress,
 }) {
-  const showScrollProgress = screen === "browse" || screen === "agent" || screen === "profile";
+  const showScrollProgress =
+    screen === "browse" ||
+    screen === "agent" ||
+    screen === "profile" ||
+    screen === "my-agents" ||
+    screen === "following" ||
+    screen === "organizations" ||
+    screen === "org-detail";
 
   return (
     <header className={`site-nav ${scrolled ? "nav--scrolled" : ""}`}>
@@ -1362,7 +1781,13 @@ function Nav({
         </button>
         <button
           className={
-            screen === "browse" || screen === "agent" || screen === "profile"
+            screen === "browse" ||
+            screen === "agent" ||
+            screen === "profile" ||
+            screen === "my-agents" ||
+            screen === "following" ||
+            screen === "organizations" ||
+            screen === "org-detail"
               ? "nav-link active"
               : "nav-link"
           }
@@ -1384,10 +1809,13 @@ function Nav({
             <Loader2 className="spin" size={14} />
             Loading
           </button>
-        ) : profile ? (
+        ) : profile || (import.meta.env.DEV && currentUser.id != null) ? (
           <NavAvatarMenu
             currentUser={currentUser}
             onNavigateToBrowse={onNavigateToBrowse}
+            onNavigateToFollowing={onNavigateToFollowing}
+            onNavigateToMyAgents={onNavigateToMyAgents}
+            onNavigateToOrganizations={onNavigateToOrganizations}
             onOpenOwnProfile={onOpenOwnProfile}
             onSignOut={onSignOut}
             onUpload={onUpload}
@@ -1614,6 +2042,10 @@ function Browse({
   onOpenAgent,
   onUpload,
   onToast,
+  devUserId,
+  followedUsers,
+  onFollow,
+  onUnfollow,
 }) {
   const browseRef = useRef(null);
   const dragCleanupsRef = useRef([]);
@@ -1984,8 +2416,12 @@ function Browse({
                 title={shelf.title}
                 subtitle={shelf.subtitle}
                 agents={shelf.agents}
+                devUserId={devUserId}
+                followedUsers={followedUsers}
+                onFollow={onFollow}
                 onOpenAgent={onOpenAgent}
                 onToast={onToast}
+                onUnfollow={onUnfollow}
               />
             </Fragment>
           ))}
@@ -2037,7 +2473,161 @@ function BrowseLoadingShelf() {
   );
 }
 
-function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
+function VisibilityBadge({ visibility }) {
+  if (!visibility || visibility === "public") return null;
+  const config = {
+    private: { label: "Private", color: "rgba(248,113,113,0.12)", textColor: "#f87171", icon: Lock },
+    followers_only: {
+      label: "Followers only",
+      color: "rgba(96,165,250,0.12)",
+      textColor: "#60a5fa",
+      icon: Users,
+    },
+    org_only: {
+      label: "Org only",
+      color: "rgba(168,85,247,0.12)",
+      textColor: "#a855f7",
+      icon: Building2,
+    },
+  };
+  const c = config[visibility];
+  if (!c) return null;
+  const Icon = c.icon;
+  return (
+    <span className="visibility-badge" style={{ background: c.color, color: c.textColor }}>
+      <Icon size={10} />
+      {c.label}
+    </span>
+  );
+}
+
+function VisibilityDropdown({
+  visibility,
+  onChange,
+  buttonLabel,
+  align = "right",
+  disabled = false,
+}) {
+  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (event) => {
+      if (!ref.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  async function selectVisibility(nextVisibility) {
+    setOpen(false);
+    if (nextVisibility === visibility || pending) return;
+    setPending(true);
+    try {
+      await onChange?.(nextVisibility);
+    } catch {
+      // The caller owns the toast and optimistic rollback.
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className={`visibility-menu-wrapper align-${align}`} ref={ref}>
+      <button
+        aria-expanded={open}
+        className="ghost-btn visibility-menu-trigger"
+        disabled={disabled || pending}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+      >
+        {pending ? <Loader2 className="spin" size={14} /> : null}
+        {buttonLabel || getVisibilityLabel(visibility)}
+        <ChevronDown size={13} />
+      </button>
+      <div className={`nav-dropdown visibility-menu ${open ? "nav-dropdown--open" : ""}`} role="menu">
+        {visibilityOptions.map((option) => (
+          <button
+            className={option.value === visibility ? "nav-dropdown-item active" : "nav-dropdown-item"}
+            key={option.value}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void selectVisibility(option.value);
+            }}
+          >
+            {option.value === "private" ? (
+              <Lock size={15} />
+            ) : option.value === "followers_only" ? (
+              <Users size={15} />
+            ) : option.value === "org_only" ? (
+              <Building2 size={15} />
+            ) : (
+              <Globe size={15} />
+            )}
+            <span>
+              <strong>{option.label}</strong>
+              <small>{option.description}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FollowButton({ userId, followedUsers, onFollow, onUnfollow, onToast }) {
+  const [pending, setPending] = useState(false);
+  const isFollowing = followedUsers?.has(String(userId));
+
+  async function toggleFollow(event) {
+    event.stopPropagation();
+    if (pending || userId == null) return;
+    setPending(true);
+    try {
+      if (isFollowing) {
+        await onUnfollow?.(userId);
+      } else {
+        await onFollow?.(userId);
+      }
+    } catch {
+      if (!onFollow || !onUnfollow) {
+        onToast?.("Could not update follow state.");
+      }
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <button
+      className={isFollowing ? "follow-mini-btn is-following" : "follow-mini-btn"}
+      disabled={pending}
+      type="button"
+      onClick={toggleFollow}
+    >
+      {pending ? <Loader2 className="spin" size={12} /> : null}
+      {isFollowing ? "Following" : "+ Follow"}
+    </button>
+  );
+}
+
+function AgentShelf({
+  title,
+  subtitle,
+  agents,
+  onOpenAgent,
+  onToast,
+  devUserId,
+  followedUsers,
+  onFollow,
+  onUnfollow,
+}) {
   return (
     <section className="shelf agent-shelf will-animate">
       <div className="shelf-header">
@@ -2059,8 +2649,13 @@ function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
           <AgentCard
             key={`${title}-${agent.id}`}
             agent={agent}
+            devUserId={devUserId}
+            followedUsers={followedUsers}
             index={index}
             onOpen={() => onOpenAgent(agent)}
+            onFollow={onFollow}
+            onToast={onToast}
+            onUnfollow={onUnfollow}
           />
         ))}
       </div>
@@ -2068,11 +2663,26 @@ function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
   );
 }
 
-function AgentCard({ agent, index, onOpen, className = "", style = undefined }) {
+function AgentCard({
+  agent,
+  index,
+  onOpen,
+  className = "",
+  style = undefined,
+  devUserId = null,
+  followedUsers = new Set(),
+  onFollow,
+  onUnfollow,
+  onToast,
+}) {
   const [transform, setTransform] = useState(undefined);
   const similarity = Number(agent.similarity);
   const hasSimilarity = Number.isFinite(similarity);
   const matchPercent = Math.round(getMatchScore(agent) * 100);
+  const owner = isAgentOwner(agent, devUserId);
+  const canFollow = agent.uploader_id != null && !owner;
+
+  if (agent.visibility === "private" && !owner) return null;
 
   const handleMouseMove = useCallback((event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2103,14 +2713,24 @@ function AgentCard({ agent, index, onOpen, className = "", style = undefined }) 
     [onOpen],
   );
 
+  const handleKeyDown = useCallback(
+    (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      onOpen();
+    },
+    [onOpen],
+  );
+
   return (
-    <button
+    <article
       className={`agent-card will-animate ${className}`.trim()}
-      type="button"
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       role="listitem"
+      tabIndex={0}
       style={{
         transform,
         transitionDelay: transform ? "0ms" : `${index * 35}ms`,
@@ -2133,23 +2753,36 @@ function AgentCard({ agent, index, onOpen, className = "", style = undefined }) 
           </span>
         ) : null}
       </span>
-      <strong>{agent.name}</strong>
+      <span className="agent-card-title-line">
+        <strong>{agent.name}</strong>
+        {owner ? <VisibilityBadge visibility={agent.visibility} /> : null}
+      </span>
       <span className="agent-description">{agent.description}</span>
       <span className="agent-meta">
         <span>{getCategoryLabel(agent.category)}</span>
         <span>{agent.model}</span>
       </span>
       <span className="agent-card-footer">
-        <span className="agent-file-name" title={agent.file_name}>
-          <FileCode2 size={13} />
-          {agent.file_name}
+        <span className="agent-card-uploader">
+          <Users size={13} />
+          {agent.team}
         </span>
-        <span title={`${formatNumber(agent.downloads)} downloads`}>
-          <Download size={13} />
-          {agent.downloads}
-        </span>
+        {canFollow ? (
+          <FollowButton
+            followedUsers={followedUsers}
+            onFollow={onFollow}
+            onToast={onToast}
+            onUnfollow={onUnfollow}
+            userId={agent.uploader_id}
+          />
+        ) : (
+          <span className="agent-file-name" title={agent.file_name}>
+            <FileCode2 size={13} />
+            {agent.file_name}
+          </span>
+        )}
       </span>
-    </button>
+    </article>
   );
 }
 
@@ -2157,15 +2790,21 @@ function AgentPage({
   agent,
   allAgents,
   currentUser,
+  devUserId,
+  followedUsers,
   onBack,
+  onFollow,
   onNavigateToAgent,
   onOpenProfile,
   onToast = () => {},
+  onUnfollow,
+  onUpdateVisibility,
 }) {
   const pageRef = useRef(null);
   const fadeTimerRef = useRef(null);
   const validationTimerRef = useRef(null);
   const tone = getCategoryTone(agent.category);
+  const owner = isAgentOwner(agent, devUserId);
   const mediaItems = useMemo(() => getAgentMedia(agent), [agent]);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaFading, setMediaFading] = useState(false);
@@ -2279,7 +2918,7 @@ function AgentPage({
   const metadataRows = [
     ["File", agent.file_name],
     ["Model", agent.model],
-    ["Visibility", agent.is_public ? "Public registry listing" : "Private draft"],
+    ["Visibility", getVisibilityLabel(agent.visibility)],
     ["Category", getCategoryLabel(agent.category)],
     ["Uploaded", formatDate(agent.created_at)],
     agent.embedding_model ? ["Embedding model", agent.embedding_model] : null,
@@ -2422,6 +3061,7 @@ function AgentPage({
               <div className="agent-title-tags">
                 <span>{getCategoryLabel(agent.category)}</span>
                 <span>{agent.model}</span>
+                {owner ? <VisibilityBadge visibility={agent.visibility} /> : null}
                 {agent.featured ? <span>Featured</span> : null}
               </div>
             </div>
@@ -2445,6 +3085,22 @@ function AgentPage({
               </button>
             </span>
             <span>{formatDate(agent.created_at)}</span>
+            {owner ? (
+              <VisibilityDropdown
+                align="left"
+                buttonLabel="Edit visibility"
+                onChange={(visibility) => onUpdateVisibility?.(agent.id, visibility)}
+                visibility={agent.visibility}
+              />
+            ) : agent.uploader_id != null ? (
+              <FollowButton
+                followedUsers={followedUsers}
+                onFollow={onFollow}
+                onToast={onToast}
+                onUnfollow={onUnfollow}
+                userId={agent.uploader_id}
+              />
+            ) : null}
           </div>
         </header>
 
@@ -2861,7 +3517,7 @@ function ReviewForm({
   );
 }
 
-function UploadPage({ onUploaded, onBack, onToast }) {
+function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
   const submitTimerRef = useRef(null);
@@ -2883,7 +3539,8 @@ function UploadPage({ onUploaded, onBack, onToast }) {
     setupInstructions: "",
     expectedUsers: "",
     tags: "",
-    isPublic: true,
+    visibility: "public",
+    orgId: "",
   });
   const [file, setFile] = useState(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -2894,6 +3551,17 @@ function UploadPage({ onUploaded, onBack, onToast }) {
 
   const detailsDone = Boolean(form.title.trim() && form.userDescription.trim());
   const publishDone = state.status === "success";
+  const manageableOrganizations = useMemo(
+    () => (currentUser.organizations || []).filter(canManageOrganization),
+    [currentUser.organizations],
+  );
+  const selectedUploadOrg = manageableOrganizations.find(
+    (org) => String(org.id) === String(form.orgId),
+  );
+  const visibilityDescription =
+    form.visibility === "org_only" && selectedUploadOrg
+      ? `Only members of ${selectedUploadOrg.name} can see this`
+      : getVisibilityDescription(form.visibility);
 
   useEffect(() => {
     setMagicState({ status: "idle", message: "" });
@@ -2969,7 +3637,21 @@ function UploadPage({ onUploaded, onBack, onToast }) {
   function updateField(field, value) {
     const nextValue =
       field === "userDescription" ? String(value).slice(0, descriptionLimit) : value;
-    setForm((current) => ({ ...current, [field]: nextValue }));
+    setForm((current) => {
+      if (field === "orgId") {
+        return {
+          ...current,
+          orgId: nextValue,
+          visibility: nextValue ? "org_only" : current.visibility,
+        };
+      }
+
+      if (field === "visibility" && nextValue !== "org_only") {
+        return { ...current, visibility: nextValue, orgId: "" };
+      }
+
+      return { ...current, [field]: nextValue };
+    });
     if (state.status === "error") setState({ status: "idle", message: "" });
   }
 
@@ -3000,7 +3682,8 @@ function UploadPage({ onUploaded, onBack, onToast }) {
     payload.append("model", form.model.trim());
     payload.append("description", form.userDescription.trim());
     payload.append("manual", form.userManual.trim());
-    payload.append("isPublic", String(form.isPublic));
+    payload.append("visibility", form.visibility);
+    if (form.orgId) payload.append("org_id", form.orgId);
 
     uploadMetadataFields.forEach((field) => {
       payload.append(field, String(form[field] || "").trim());
@@ -3090,7 +3773,9 @@ function UploadPage({ onUploaded, onBack, onToast }) {
         category: form.category,
         model: form.model || "unknown",
         file_name: file.name,
-        is_public: form.isPublic,
+        visibility: form.visibility,
+        org_id: form.orgId || null,
+        is_public: form.visibility === "public",
         created_at: new Date().toISOString(),
         featured: true,
       };
@@ -3317,19 +4002,34 @@ function UploadPage({ onUploaded, onBack, onToast }) {
             </div>
           </section>
 
-          <div className="visibility-toggle form-field-animate" style={{ "--field-delay": "980ms" }}>
-            <span>Private</span>
-            <button
-              aria-checked={form.isPublic}
-              className={form.isPublic ? "public-switch is-public" : "public-switch"}
-              role="switch"
-              type="button"
-              onClick={() => updateField("isPublic", !form.isPublic)}
-            >
-              <span />
-            </button>
-            <span>Public</span>
+          <div className="visibility-select-block form-field-animate" style={{ "--field-delay": "980ms" }}>
+            <FloatingField active delay={980} label="Visibility">
+              <select
+                value={form.visibility}
+                onChange={(event) => updateField("visibility", event.target.value)}
+              >
+                {visibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </FloatingField>
+            <small>{visibilityDescription}</small>
           </div>
+
+          {manageableOrganizations.length ? (
+            <FloatingField active={Boolean(form.orgId)} delay={1015} label="Add to organization">
+              <select value={form.orgId} onChange={(event) => updateField("orgId", event.target.value)}>
+                <option value="">None (personal)</option>
+                {manageableOrganizations.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))}
+              </select>
+            </FloatingField>
+          ) : null}
 
           <button
             className={`primary-btn publish-btn ${state.status === "success" ? "is-success" : ""} ${
@@ -3412,6 +4112,885 @@ function UploadProgress({ detailsDone, file, magicDone, publishDone }) {
   );
 }
 
+function OrganizationsPage({
+  currentUser,
+  devUserId,
+  organizations,
+  onSelectOrg,
+  onBack,
+  onOrganizationsChange,
+  onToast,
+}) {
+  const pageRef = useRef(null);
+  const [orgs, setOrgs] = useState(() => organizations.map(normalizeOrganization));
+  const [loadState, setLoadState] = useState("loading");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [draft, setDraft] = useState({ name: "", slug: "", description: "" });
+
+  const loadOrganizations = useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const data = await getMyOrganizations();
+      const nextOrgs = extractAgentList(data).map(normalizeOrganization);
+      setOrgs(nextOrgs);
+      onOrganizationsChange(nextOrgs);
+      setLoadState("loaded");
+    } catch {
+      setOrgs((current) => current);
+      setLoadState("error");
+    }
+  }, [onOrganizationsChange]);
+
+  useEffect(() => {
+    void loadOrganizations();
+  }, [devUserId, loadOrganizations]);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return undefined;
+
+    const cards = Array.from(root.querySelectorAll(".organization-card"));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("did-animate");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+    );
+
+    cards.forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, [orgs.length, loadState]);
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === "name" ? { slug: slugFromName(value) } : {}),
+    }));
+  }
+
+  async function submitOrganization(event) {
+    event.preventDefault();
+    const name = draft.name.trim();
+    const slug = slugFromName(draft.slug || name);
+
+    if (!name || !slug) {
+      onToast("Organization name is required.");
+      return;
+    }
+
+    try {
+      const created = normalizeOrganization(
+        await createOrganization({
+          name,
+          slug,
+          description: draft.description.trim(),
+        }),
+      );
+      const nextOrgs = [created, ...orgs];
+      setOrgs(nextOrgs);
+      onOrganizationsChange(nextOrgs);
+      setDraft({ name: "", slug: "", description: "" });
+      setCreateOpen(false);
+      setLoadState("loaded");
+      onToast("Organization created.");
+    } catch (error) {
+      onToast(error.message || "Could not create organization.");
+    }
+  }
+
+  return (
+    <section className="organizations-page" ref={pageRef}>
+      <div className="organizations-inner">
+        <div className="agent-topbar">
+          <nav className="agent-breadcrumb" aria-label="Breadcrumb">
+            <button type="button" onClick={onBack}>
+              Atlas Hub
+            </button>
+            <span>/</span>
+            <span>Organizations</span>
+          </nav>
+          <button className="agent-back-btn" type="button" onClick={onBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        </div>
+
+        <header className="organizations-header">
+          <div>
+            <h1>Organizations</h1>
+            <p>Teams and groups you're a part of.</p>
+          </div>
+          <button className="ghost-btn compact" type="button" onClick={() => setCreateOpen((open) => !open)}>
+            <Plus size={15} />
+            New organization
+          </button>
+        </header>
+
+        <form
+          className={createOpen ? "org-create-form is-open" : "org-create-form"}
+          onSubmit={submitOrganization}
+        >
+          <FloatingField active={Boolean(draft.name)} delay={0} label="Name">
+            <input
+              value={draft.name}
+              onChange={(event) => updateDraft("name", event.target.value)}
+              placeholder="Acme Corp"
+            />
+          </FloatingField>
+          <FloatingField active={Boolean(draft.slug)} delay={40} label="Slug">
+            <input
+              className="org-slug-input"
+              value={draft.slug}
+              onChange={(event) => updateDraft("slug", event.target.value)}
+              placeholder="acme-corp"
+            />
+          </FloatingField>
+          <FloatingField active={Boolean(draft.description)} className="textarea-field" delay={80} label="Description">
+            <textarea
+              value={draft.description}
+              onChange={(event) => updateDraft("description", event.target.value)}
+              placeholder="What this team shares on Atlas Hub"
+            />
+          </FloatingField>
+          <button className="primary-btn compact" type="submit">
+            <Plus size={15} />
+            Create
+          </button>
+        </form>
+
+        {loadState === "loading" ? (
+          <div className="organizations-grid" aria-hidden="true">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div className="organization-card skeleton-org-card" key={index}>
+                <span className="skeleton-icon" />
+                <span className="skeleton-line title" />
+                <span className="skeleton-line wide" />
+                <span className="skeleton-line medium" />
+              </div>
+            ))}
+          </div>
+        ) : loadState === "error" && !orgs.length ? (
+          <div className="empty-state error-state organizations-empty">
+            <Database className="empty-state-icon" size={32} />
+            <h3>Unable to load organizations</h3>
+            <p>Check the backend connection and try again.</p>
+            <button className="ghost-btn" type="button" onClick={loadOrganizations}>
+              Retry
+            </button>
+          </div>
+        ) : orgs.length ? (
+          <div className="organizations-grid">
+            {orgs.map((org, index) => (
+              <button
+                className="organization-card will-animate"
+                key={org.id}
+                style={{ "--field-delay": `${index * 35}ms` }}
+                type="button"
+                onClick={() => onSelectOrg(org)}
+              >
+                <span className="organization-card-top">
+                  <span className="organization-avatar">
+                    {org.avatar_url ? <img src={org.avatar_url} alt="" /> : getOrgInitials(org.name)}
+                  </span>
+                  <span className="organization-copy">
+                    <strong>{org.name}</strong>
+                    <small>{org.slug}</small>
+                  </span>
+                </span>
+                <span className="organization-description">{org.description || "No description yet."}</span>
+                <span className="organization-card-bottom">
+                  <span>{org.member_count} members</span>
+                  <span>{org.agent_count} agents</span>
+                  <span className={`org-role-badge ${org.current_user_role}`}>
+                    {org.current_user_role === "owner"
+                      ? "Owner"
+                      : org.current_user_role === "admin"
+                        ? "Admin"
+                        : "Member"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state organizations-empty">
+            <Building2 className="empty-state-icon" size={32} />
+            <h3>You're not in any organizations yet.</h3>
+            <button className="ghost-btn" type="button" onClick={() => setCreateOpen(true)}>
+              <Plus size={16} />
+              Create one
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OrgDetailPage({
+  org,
+  currentUser,
+  devUserId,
+  onNavigateToAgent,
+  onBack,
+  onOrganizationsChange,
+  onToast,
+}) {
+  const [orgDetail, setOrgDetail] = useState(() => normalizeOrganization(org));
+  const [loadState, setLoadState] = useState("loading");
+  const [editOpen, setEditOpen] = useState(false);
+  const [memberFormOpen, setMemberFormOpen] = useState(false);
+  const [memberMenuId, setMemberMenuId] = useState(null);
+  const [editDraft, setEditDraft] = useState({ name: org.name, description: org.description || "" });
+  const [memberDraft, setMemberDraft] = useState({ userId: "", role: "member" });
+
+  const currentMember = orgDetail.members.find(
+    (member) => String(member.user_id) === String(devUserId),
+  );
+  const currentMemberRole = currentMember?.role || orgDetail.current_user_role;
+  const isOwner = currentMemberRole === "owner";
+  const isAdmin = currentMemberRole === "owner" || currentMemberRole === "admin";
+
+  const loadOrg = useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const data = normalizeOrganization(await getOrganization(org.id));
+      setOrgDetail(data);
+      setEditDraft({ name: data.name, description: data.description || "" });
+      setLoadState("loaded");
+    } catch {
+      setLoadState("error");
+    }
+  }, [org.id]);
+
+  useEffect(() => {
+    void loadOrg();
+  }, [devUserId, loadOrg]);
+
+  async function saveOrgEdit(event) {
+    event.preventDefault();
+    try {
+      const updated = normalizeOrganization(
+        await updateOrganization(orgDetail.id, {
+          name: editDraft.name.trim(),
+          description: editDraft.description.trim(),
+        }),
+      );
+      const nextDetail = { ...orgDetail, ...updated };
+      const nextOrganizations = (currentUser.organizations || []).map((item) =>
+        item.id === nextDetail.id ? nextDetail : item,
+      );
+      setOrgDetail(nextDetail);
+      onOrganizationsChange(nextOrganizations);
+      setEditOpen(false);
+      onToast("Organization updated.");
+    } catch (error) {
+      onToast(error.message || "Could not update organization.");
+    }
+  }
+
+  async function submitMember(event) {
+    event.preventDefault();
+    if (!memberDraft.userId.trim()) {
+      onToast("Enter a user id.");
+      return;
+    }
+
+    try {
+      const added = await addOrgMember(orgDetail.id, memberDraft.userId.trim(), memberDraft.role);
+      setOrgDetail((current) => ({
+        ...current,
+        members: [...current.members.filter((member) => String(member.user_id) !== String(added.user_id)), added],
+        member_count: current.members.some((member) => String(member.user_id) === String(added.user_id))
+          ? current.member_count
+          : current.member_count + 1,
+      }));
+      setMemberDraft({ userId: "", role: "member" });
+      setMemberFormOpen(false);
+      onToast("Member added.");
+    } catch (error) {
+      onToast(error.message || "Could not add member.");
+    }
+  }
+
+  async function changeMemberRole(member, role) {
+    const previous = orgDetail;
+    setOrgDetail((current) => ({
+      ...current,
+      members: current.members.map((item) =>
+        String(item.user_id) === String(member.user_id) ? { ...item, role } : item,
+      ),
+    }));
+    setMemberMenuId(null);
+
+    try {
+      await updateOrgMemberRole(orgDetail.id, member.user_id, role);
+      onToast(role === "admin" ? "Member promoted to admin." : "Member role updated.");
+    } catch (error) {
+      setOrgDetail(previous);
+      onToast(error.message || "Could not update member.");
+    }
+  }
+
+  async function removeMember(member) {
+    const previous = orgDetail;
+    setOrgDetail((current) => ({
+      ...current,
+      members: current.members.filter((item) => String(item.user_id) !== String(member.user_id)),
+      member_count: Math.max(0, current.member_count - 1),
+    }));
+    setMemberMenuId(null);
+
+    try {
+      await removeOrgMember(orgDetail.id, member.user_id);
+      onToast(String(member.user_id) === String(devUserId) ? "Left organization." : "Member removed.");
+    } catch (error) {
+      setOrgDetail(previous);
+      onToast(error.message || "Could not remove member.");
+    }
+  }
+
+  async function removeAgentFromOrg(agent) {
+    const previous = orgDetail;
+    setOrgDetail((current) => ({
+      ...current,
+      agents: current.agents.filter((item) => String(item.id) !== String(agent.id)),
+      agent_count: Math.max(0, current.agent_count - 1),
+    }));
+
+    try {
+      await updateAgentVisibility(agent.id, "public", { org_id: null });
+      onToast("Agent removed from organization.");
+    } catch (error) {
+      setOrgDetail(previous);
+      onToast(error.message || "Could not remove agent.");
+    }
+  }
+
+  const members = orgDetail.members || [];
+  const agents = orgDetail.agents || [];
+
+  return (
+    <section className="org-detail-page">
+      <div className="org-detail-inner">
+        <div className="agent-topbar">
+          <nav className="agent-breadcrumb" aria-label="Breadcrumb">
+            <button type="button" onClick={onBack}>
+              Atlas Hub
+            </button>
+            <span>/</span>
+            <button type="button" onClick={onBack}>
+              Organizations
+            </button>
+            <span>/</span>
+            <span>{orgDetail.name}</span>
+          </nav>
+          <button className="agent-back-btn" type="button" onClick={onBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        </div>
+
+        <header className="org-detail-header">
+          <div className="org-banner" />
+          <span className="org-detail-avatar">
+            {orgDetail.avatar_url ? <img src={orgDetail.avatar_url} alt="" /> : getOrgInitials(orgDetail.name)}
+          </span>
+          {isOwner ? (
+            <button className="ghost-btn compact org-edit-btn" type="button" onClick={() => setEditOpen((open) => !open)}>
+              Edit
+            </button>
+          ) : null}
+          <div className="org-detail-copy">
+            <h1>{orgDetail.name}</h1>
+            <span>{orgDetail.slug}</span>
+            {orgDetail.description ? <p>{orgDetail.description}</p> : null}
+          </div>
+        </header>
+
+        {loadState === "error" ? (
+          <div className="empty-state error-state">
+            <Database className="empty-state-icon" size={32} />
+            <h3>Unable to load organization</h3>
+            <button className="ghost-btn" type="button" onClick={loadOrg}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+
+        {editOpen ? (
+          <form className="org-inline-form" onSubmit={saveOrgEdit}>
+            <FloatingField active={Boolean(editDraft.name)} delay={0} label="Name">
+              <input value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
+            </FloatingField>
+            <FloatingField active={Boolean(editDraft.description)} className="textarea-field" delay={40} label="Description">
+              <textarea value={editDraft.description} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
+            </FloatingField>
+            <button className="primary-btn compact" type="submit">Save</button>
+          </form>
+        ) : null}
+
+        <section className="org-section">
+          <div className="org-section-header">
+            <h2>Members</h2>
+            <span>{members.length} members</span>
+            {isAdmin ? (
+              <button className="ghost-btn compact" type="button" onClick={() => setMemberFormOpen((open) => !open)}>
+                <Plus size={15} />
+                Add member
+              </button>
+            ) : null}
+          </div>
+
+          {memberFormOpen ? (
+            <form className="org-member-form" onSubmit={submitMember}>
+              <input
+                value={memberDraft.userId}
+                onChange={(event) => setMemberDraft((current) => ({ ...current, userId: event.target.value }))}
+                placeholder="User id or username"
+              />
+              <select
+                value={memberDraft.role}
+                onChange={(event) => setMemberDraft((current) => ({ ...current, role: event.target.value }))}
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button className="primary-btn compact" type="submit">Add</button>
+            </form>
+          ) : null}
+
+          <div className="org-member-list">
+            {members.map((member) => {
+              const isCurrentUser = String(member.user_id) === String(devUserId);
+              const isMemberOwner = member.role === "owner";
+              return (
+                <article className="org-member-row" key={member.user_id}>
+                  <span className="org-member-avatar">{getProfileInitials(member.display_name)}</span>
+                  <span className="org-member-copy">
+                    <strong>
+                      {member.display_name}
+                      {member.role === "owner" ? <span className="org-role-symbol owner">*</span> : null}
+                      {member.role === "admin" ? <span className="org-role-symbol admin">^</span> : null}
+                    </strong>
+                    <small>Joined {formatDate(member.joined_at)}</small>
+                  </span>
+                  <span className={`org-role-pill ${member.role}`}>{titleCase(member.role)}</span>
+                  {isAdmin && !isMemberOwner ? (
+                    <span className="org-member-actions">
+                      {isCurrentUser ? (
+                        <button className="ghost-btn compact org-leave-btn" type="button" onClick={() => removeMember(member)}>
+                          Leave
+                        </button>
+                      ) : null}
+                      <button className="ghost-btn compact" type="button" onClick={() => setMemberMenuId(memberMenuId === member.user_id ? null : member.user_id)}>
+                        ...
+                      </button>
+                      {memberMenuId === member.user_id ? (
+                        <span className="org-member-menu">
+                          <button type="button" onClick={() => changeMemberRole(member, "admin")}>Make admin</button>
+                          <button type="button" onClick={() => changeMemberRole(member, "member")}>Make member</button>
+                          <button type="button" onClick={() => removeMember(member)}>Remove</button>
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="org-section">
+          <div className="org-section-header">
+            <h2>Organization agents</h2>
+            <span>{agents.length} agents</span>
+          </div>
+          {agents.length ? (
+            <div className="org-agent-list">
+              {agents.map((agent) => (
+                <article className="my-agent-row" key={agent.id}>
+                  <span className="my-agent-icon">
+                    <FileCode2 size={18} />
+                  </span>
+                  <span className="my-agent-copy">
+                    <strong>{agent.name}</strong>
+                    <small>{agent.file_name}</small>
+                  </span>
+                  <VisibilityBadge visibility={agent.visibility} />
+                  <span className="my-agent-actions">
+                    <button className="ghost-btn compact" type="button" onClick={() => onNavigateToAgent(agent)}>
+                      <ExternalLink size={14} />
+                      View
+                    </button>
+                    {isAdmin ? (
+                      <button className="ghost-btn compact my-agent-delete-btn" type="button" onClick={() => removeAgentFromOrg(agent)}>
+                        Remove from org
+                      </button>
+                    ) : null}
+                  </span>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="profile-empty-state">
+              <p>No agents linked to this organization yet.</p>
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function MyAgentsPage({
+  currentUser,
+  onBack,
+  onNavigateToAgent,
+  onToast,
+  devUserId,
+  onUpload,
+}) {
+  const [myAgents, setMyAgents] = useState([]);
+  const [loadState, setLoadState] = useState("loading");
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [orgVisibilityAgentId, setOrgVisibilityAgentId] = useState(null);
+  const [orgVisibilityOrgId, setOrgVisibilityOrgId] = useState("");
+  const manageableOrganizations = useMemo(
+    () => (currentUser.organizations || []).filter(canManageOrganization),
+    [currentUser.organizations],
+  );
+
+  const loadMyAgents = useCallback(async () => {
+    setLoadState("loading");
+    setDeleteConfirmId(null);
+    try {
+      const data = await getMyAgents();
+      setMyAgents(extractAgentList(data).map(normalizeAgent));
+      setLoadState("loaded");
+    } catch {
+      setLoadState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMyAgents();
+  }, [devUserId, loadMyAgents]);
+
+  async function changeVisibility(agent, visibility, orgId = null) {
+    if (visibility === "org_only" && !orgId && manageableOrganizations.length) {
+      setOrgVisibilityAgentId(agent.id);
+      setOrgVisibilityOrgId(String(agent.org_id || manageableOrganizations[0].id));
+      return;
+    }
+
+    const previousAgents = myAgents;
+    setMyAgents((current) =>
+      current.map((item) =>
+        String(item.id) === String(agent.id)
+          ? normalizeAgent({ ...item, visibility, org_id: orgId, is_public: visibility === "public" })
+          : item,
+      ),
+    );
+
+    try {
+      await updateAgentVisibility(agent.id, visibility, { org_id: orgId });
+      setOrgVisibilityAgentId(null);
+      setOrgVisibilityOrgId("");
+      onToast(`Visibility updated to ${getVisibilityLabel(visibility)}.`);
+    } catch {
+      setMyAgents(previousAgents);
+      onToast("Failed to update visibility.");
+    }
+  }
+
+  async function confirmDelete(agent) {
+    const previousAgents = myAgents;
+    setMyAgents((current) => current.filter((item) => String(item.id) !== String(agent.id)));
+    setDeleteConfirmId(null);
+
+    try {
+      await deleteAgent(agent.id);
+      onToast("Agent deleted.");
+    } catch {
+      setMyAgents(previousAgents);
+      onToast("Failed to delete agent.");
+    }
+  }
+
+  return (
+    <section className="my-agents-page">
+      <div className="my-agents-inner">
+        <div className="agent-topbar">
+          <nav className="agent-breadcrumb" aria-label="Breadcrumb">
+            <button type="button" onClick={onBack}>
+              Atlas Hub
+            </button>
+            <span>/</span>
+            <span>My Agents</span>
+          </nav>
+          <button className="agent-back-btn" type="button" onClick={onBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        </div>
+
+        <header className="my-agents-header">
+          <div>
+            <h1>My Agents</h1>
+            <p>Manage your published agents.</p>
+          </div>
+          <span className="my-agents-count">{myAgents.length} agents</span>
+        </header>
+
+        {loadState === "loading" ? (
+          <div className="my-agent-list" aria-hidden="true">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div className="my-agent-row skeleton-row" key={index}>
+                <span className="skeleton-icon" />
+                <span className="skeleton-row-copy">
+                  <span className="skeleton-line title" />
+                  <span className="skeleton-line medium" />
+                </span>
+                <span className="skeleton-line medium" />
+              </div>
+            ))}
+          </div>
+        ) : loadState === "error" ? (
+          <div className="empty-state error-state my-agents-state">
+            <Database className="empty-state-icon" size={32} />
+            <h3>Unable to load your agents</h3>
+            <p>Check the backend connection and try again.</p>
+            <button className="ghost-btn" type="button" onClick={loadMyAgents}>
+              Retry
+            </button>
+          </div>
+        ) : myAgents.length ? (
+          <div className="my-agent-list">
+            {myAgents.map((agent) => {
+              const confirming = String(deleteConfirmId) === String(agent.id);
+              return (
+                <article
+                  className={confirming ? "my-agent-row is-confirming-delete" : "my-agent-row"}
+                  key={agent.id}
+                >
+                  <span className="my-agent-icon">
+                    <FileCode2 size={18} />
+                  </span>
+                  <span className="my-agent-copy">
+                    <strong>{agent.name}</strong>
+                    <small>{agent.file_name}</small>
+                  </span>
+                  <span className="my-agent-visibility">
+                    {agent.visibility === "public" ? (
+                      <span className="visibility-badge visibility-badge-public">
+                        <Globe size={10} />
+                        Public
+                      </span>
+                    ) : (
+                      <VisibilityBadge visibility={agent.visibility} />
+                    )}
+                  </span>
+                  <span className="my-agent-actions">
+                    <VisibilityDropdown
+                      onChange={(visibility) => changeVisibility(agent, visibility)}
+                      visibility={agent.visibility}
+                    />
+                    {String(orgVisibilityAgentId) === String(agent.id) ? (
+                      <span className="org-visibility-picker">
+                        <select
+                          value={orgVisibilityOrgId}
+                          onChange={(event) => setOrgVisibilityOrgId(event.target.value)}
+                        >
+                          {manageableOrganizations.map((org) => (
+                            <option key={org.id} value={org.id}>
+                              {org.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="ghost-btn compact"
+                          type="button"
+                          onClick={() => changeVisibility(agent, "org_only", orgVisibilityOrgId)}
+                        >
+                          Confirm org
+                        </button>
+                      </span>
+                    ) : null}
+                    <button
+                      className="ghost-btn compact my-agent-view-btn"
+                      type="button"
+                      onClick={() => onNavigateToAgent(agent)}
+                    >
+                      <ExternalLink size={14} />
+                      View
+                    </button>
+                    {confirming ? (
+                      <>
+                        <button
+                          className="ghost-btn compact my-agent-delete-btn confirm"
+                          type="button"
+                          onClick={() => confirmDelete(agent)}
+                        >
+                          Confirm delete
+                        </button>
+                        <button
+                          className="ghost-btn compact"
+                          type="button"
+                          onClick={() => setDeleteConfirmId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="ghost-btn compact my-agent-delete-btn"
+                        type="button"
+                        onClick={() => setDeleteConfirmId(agent.id)}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    )}
+                  </span>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="profile-empty-state my-agents-empty">
+            <p>No agents yet</p>
+            <button className="ghost-btn" type="button" onClick={onUpload}>
+              <Plus size={16} />
+              Upload your first agent
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FollowingFeedPage({
+  currentUser,
+  devUserId,
+  followedUsers,
+  onNavigateToAgent,
+  onToast,
+  onBack,
+  onBrowse,
+  onFollow,
+  onUnfollow,
+}) {
+  const [feedAgents, setFeedAgents] = useState([]);
+  const [loadState, setLoadState] = useState("loading");
+
+  const loadFeed = useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const data = await getFollowingFeed();
+      setFeedAgents(extractAgentList(data).map(normalizeAgent));
+      setLoadState("loaded");
+    } catch {
+      setLoadState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser.id === null) return;
+    void loadFeed();
+  }, [currentUser.id, devUserId, loadFeed]);
+
+  if (currentUser.id === null) {
+    return (
+      <section className="profile-page">
+        <div className="profile-page-inner">
+          <div className="profile-topbar">
+            <button className="agent-back-btn" type="button" onClick={onBack}>
+              <ArrowLeft size={15} />
+              Back
+            </button>
+          </div>
+          <div className="profile-guest-prompt">
+            <LockKeyhole size={32} color="var(--text3)" />
+            <h2>Sign in to view your feed</h2>
+            <p>Follow users to see their agents here.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="following-feed-page">
+      <div className="following-feed-inner">
+        <div className="agent-topbar">
+          <nav className="agent-breadcrumb" aria-label="Breadcrumb">
+            <button type="button" onClick={onBack}>
+              Atlas Hub
+            </button>
+            <span>/</span>
+            <span>Following feed</span>
+          </nav>
+          <button className="agent-back-btn" type="button" onClick={onBack}>
+            <ArrowLeft size={15} />
+            Back
+          </button>
+        </div>
+
+        <header className="following-feed-header">
+          <span className="eyebrow">Following feed</span>
+          <h1>From people you follow</h1>
+          <p>Agents published by users you follow, newest first.</p>
+        </header>
+
+        {loadState === "loading" ? (
+          <BrowseLoadingShelf />
+        ) : loadState === "error" ? (
+          <div className="empty-state error-state following-feed-state">
+            <Database className="empty-state-icon" size={32} />
+            <h3>Unable to load feed</h3>
+            <p>Check the backend connection and try again.</p>
+            <button className="ghost-btn" type="button" onClick={loadFeed}>
+              Retry
+            </button>
+          </div>
+        ) : feedAgents.length ? (
+          <div className="following-card-list" role="list">
+            {feedAgents.map((agent, index) => (
+              <AgentCard
+                agent={agent}
+                devUserId={devUserId}
+                followedUsers={followedUsers}
+                index={index}
+                key={agent.id}
+                onFollow={onFollow}
+                onOpen={() => onNavigateToAgent(agent)}
+                onToast={onToast}
+                onUnfollow={onUnfollow}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state following-empty-state">
+            <Users className="empty-state-icon" size={32} />
+            <h3>Nothing here yet</h3>
+            <p>Follow some users to see their agents here.</p>
+            <button className="primary-btn" type="button" onClick={onBrowse}>
+              Browse agents
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function renderAnimatedWords(words, baseDelay = 0) {
   return words.map((word, index) => (
     <span className="word-wrap" key={`${word}-${index}`}>
@@ -3460,9 +5039,7 @@ function AgentDrawer({ agent, state, onClose }) {
 
         <div className="detail-block">
           <h3>Constraints</h3>
-          <p>{`File: ${agent.file_name}\nModel: ${agent.model}\nVisibility: ${
-            agent.is_public ? "Public registry listing" : "Private draft"
-          }`}</p>
+          <p>{`File: ${agent.file_name}\nModel: ${agent.model}\nVisibility: ${getVisibilityLabel(agent.visibility)}`}</p>
         </div>
 
         <div className="detail-block">
@@ -3509,10 +5086,14 @@ function ProfilePage({
   isOwnProfile,
   allAgents,
   activity,
+  devUserId,
+  followedUsers,
   onBack,
+  onFollow,
   onNavigateToAgent,
   onUpload,
   onSignIn,
+  onUnfollow,
   onUpdateUser,
   onToast,
 }) {
@@ -3775,9 +5356,14 @@ function ProfilePage({
                   <AgentCard
                     key={agent.id}
                     agent={agent}
+                    devUserId={devUserId}
+                    followedUsers={followedUsers}
                     index={index}
                     className="profile-agent-card will-animate"
+                    onFollow={onFollow}
                     onOpen={() => onNavigateToAgent(agent)}
+                    onToast={onToast}
+                    onUnfollow={onUnfollow}
                     style={{ "--field-delay": `${index * 35}ms` }}
                   />
                 ))}

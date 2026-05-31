@@ -1251,6 +1251,7 @@ input::placeholder {
   background:
     var(--texture-panel),
     var(--surface);
+  cursor: none;
   scroll-snap-align: start;
   transform-style: preserve-3d;
   transition:
@@ -1259,6 +1260,11 @@ input::placeholder {
     box-shadow 180ms ease,
     border-color 180ms ease,
     background 180ms ease;
+}
+
+.agent-card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
 }
 
 .agent-card.did-animate:hover {
@@ -1337,6 +1343,36 @@ input::placeholder {
   -webkit-line-clamp: 2;
 }
 
+.agent-card-title-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-card-title-line strong {
+  min-width: 0;
+}
+
+.visibility-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.visibility-badge-public {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
 .agent-description {
   display: -webkit-box;
   overflow: hidden;
@@ -1389,6 +1425,41 @@ input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-card-uploader {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-mini-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text2);
+  background: rgba(255, 255, 255, 0.035);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  cursor: none;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.follow-mini-btn:hover,
+.follow-mini-btn.is-following {
+  color: var(--green);
+  border-color: rgba(111, 224, 157, 0.35);
+  background: var(--green-soft);
 }
 
 .loading-shelf {
@@ -2860,6 +2931,16 @@ button.review-avatar:hover {
   min-width: 0;
 }
 
+.visibility-select-block {
+  display: grid;
+  gap: 6px;
+}
+
+.visibility-select-block > small {
+  color: var(--text3);
+  font-size: 11px;
+}
+
 .visibility-toggle {
   display: inline-flex;
   align-items: center;
@@ -2942,6 +3023,603 @@ button.review-avatar:hover {
   margin: -6px 0 0;
   color: #f87171;
   font-size: 12px;
+}
+
+.my-agents-page,
+.following-feed-page {
+  min-height: 100vh;
+  padding: 112px 24px 72px;
+}
+
+.my-agents-inner,
+.following-feed-inner {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 1000px);
+  margin: 0 auto;
+}
+
+.my-agents-header,
+.following-feed-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.following-feed-header {
+  display: grid;
+  justify-content: stretch;
+  gap: 8px;
+}
+
+.my-agents-header h1,
+.following-feed-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 4.2rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.my-agents-header p,
+.following-feed-header p {
+  margin: 8px 0 0;
+  color: var(--text3);
+  font-size: 14px;
+}
+
+.my-agents-count {
+  flex-shrink: 0;
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.my-agent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.my-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.my-agent-row.is-confirming-delete {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(248, 113, 113, 0.05);
+}
+
+.my-agent-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.my-agent-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.my-agent-copy strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-agent-copy small {
+  overflow: hidden;
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-agent-visibility {
+  display: inline-flex;
+  min-width: 112px;
+}
+
+.my-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.my-agent-actions .ghost-btn.compact {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.my-agent-delete-btn:hover,
+.my-agent-delete-btn.confirm {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.skeleton-row {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.skeleton-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.08) 45%, transparent 80%);
+  transform: translateX(-100%);
+  animation: shimmer 1.4s infinite;
+}
+
+.skeleton-row-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.my-agents-state,
+.following-feed-state,
+.following-empty-state {
+  min-height: 280px;
+}
+
+.my-agents-empty {
+  justify-items: center;
+  text-align: center;
+}
+
+.following-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.following-card-list .agent-card {
+  width: 100%;
+  max-width: none;
+}
+
+.organizations-page,
+.org-detail-page {
+  min-height: 100vh;
+  padding: 112px 24px 72px;
+}
+
+.organizations-inner,
+.org-detail-inner {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 1000px);
+  margin: 0 auto;
+}
+
+.organizations-header,
+.org-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.organizations-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 4.2rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.organizations-header p {
+  margin: 8px 0 0;
+  color: var(--text3);
+  font-size: 14px;
+}
+
+.org-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.5fr) auto;
+  gap: 12px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 240ms ease,
+    opacity 180ms ease;
+}
+
+.org-create-form.is-open {
+  max-height: 420px;
+  opacity: 1;
+}
+
+.org-create-form .textarea-field {
+  grid-column: 1 / -1;
+}
+
+.org-slug-input {
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+.organizations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.organization-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  cursor: none;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    transform 0.2s;
+}
+
+.organization-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-strong);
+  transform: translateY(-2px);
+}
+
+.organization-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.organization-avatar,
+.org-detail-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  color: var(--gold2);
+  background: rgba(201, 168, 76, 0.15);
+  font-weight: 700;
+}
+
+.organization-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 13px;
+}
+
+.organization-avatar img,
+.org-detail-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.organization-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.organization-copy strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organization-copy small {
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.organization-description {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 36px;
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.organization-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.organization-card-bottom .org-role-badge {
+  margin-left: auto;
+}
+
+.org-role-badge,
+.org-role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.org-role-badge.owner,
+.org-role-pill.owner {
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.org-role-badge.admin,
+.org-role-pill.admin {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.org-role-badge.member,
+.org-role-pill.member {
+  color: var(--text3);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-org-card {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.skeleton-org-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.08) 45%, transparent 80%);
+  transform: translateX(-100%);
+  animation: shimmer 1.4s infinite;
+}
+
+.organizations-empty {
+  min-height: 280px;
+}
+
+.org-detail-header {
+  position: relative;
+  display: grid;
+  gap: 0;
+  padding-bottom: 22px;
+}
+
+.org-banner {
+  height: 120px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--surface2), var(--surface3));
+}
+
+.org-detail-avatar {
+  position: absolute;
+  left: 24px;
+  top: 92px;
+  width: 56px;
+  height: 56px;
+  border: 3px solid var(--bg);
+  font-size: 16px;
+}
+
+.org-edit-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.org-detail-copy {
+  display: grid;
+  gap: 6px;
+  padding: 34px 24px 0 96px;
+}
+
+.org-detail-copy h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.org-detail-copy > span {
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.org-detail-copy p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.org-inline-form,
+.org-member-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.org-member-form {
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+}
+
+.org-member-form input,
+.org-member-form select,
+.org-visibility-picker select {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.org-section {
+  display: grid;
+  gap: 14px;
+}
+
+.org-section-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.org-section-header > span {
+  margin-right: auto;
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.org-member-list,
+.org-agent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.org-member-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.org-member-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--gold2);
+  background: rgba(201, 168, 76, 0.15);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.org-member-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.org-member-copy strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.org-member-copy small {
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.org-role-symbol.owner {
+  color: var(--gold);
+}
+
+.org-role-symbol.admin {
+  color: #60a5fa;
+}
+
+.org-member-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.org-leave-btn:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.org-member-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.org-member-menu button {
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text2);
+  text-align: left;
+  background: none;
+}
+
+.org-member-menu button:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.org-visibility-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .drawer-backdrop {
@@ -3381,6 +4059,28 @@ button.review-avatar:hover {
   background: var(--surface2);
 }
 
+.nav-dropdown-item.active {
+  color: var(--gold-strong);
+  background: var(--gold-soft);
+}
+
+.nav-dropdown-item span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nav-dropdown-item strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.nav-dropdown-item small {
+  color: var(--text3);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .nav-dropdown-item.danger:hover {
   color: #f87171;
   background: rgba(248, 113, 113, 0.08);
@@ -3395,6 +4095,63 @@ button.review-avatar:hover {
 .nav-dropdown-item.muted:hover {
   color: var(--text2);
   background: none;
+}
+
+.visibility-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.visibility-menu-wrapper.align-left .visibility-menu {
+  right: auto;
+  left: 0;
+}
+
+.visibility-menu-trigger {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.visibility-menu {
+  width: 245px;
+}
+
+.dev-user-selector {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.dev-user-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text2);
+  background: none;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  cursor: none;
+  transition: all 0.15s;
+}
+
+.dev-user-btn.active {
+  color: #0a0a08;
+  border-color: var(--gold);
+  background: var(--gold);
+  font-weight: 600;
 }
 
 .user-pill {
@@ -4259,6 +5016,46 @@ button.review-avatar:hover {
   .metadata-field-grid {
     grid-template-columns: 1fr;
   }
+
+  .my-agents-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .my-agent-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .my-agent-visibility {
+    min-width: 0;
+  }
+
+  .my-agent-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .organizations-header,
+  .org-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .org-create-form,
+  .org-member-form {
+    grid-template-columns: 1fr;
+  }
+
+  .org-member-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .org-role-pill,
+  .org-member-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 540px) {
@@ -4392,6 +5189,31 @@ button.review-avatar:hover {
   .profile-activity-time {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .my-agents-page,
+  .following-feed-page,
+  .organizations-page,
+  .org-detail-page {
+    padding-inline: 18px;
+  }
+
+  .following-card-list {
+    grid-template-columns: 1fr;
+  }
+
+  .dev-user-selector {
+    bottom: 12px;
+    left: 12px;
+  }
+
+  .organizations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .org-detail-copy {
+    padding-left: 24px;
+    padding-top: 42px;
   }
 }
 
