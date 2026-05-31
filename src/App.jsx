@@ -38,8 +38,10 @@ import {
   analyzeAgent,
   getAgent,
   getAgents,
+  getAgentReviews,
   getApiBaseLabel,
   publishAgent,
+  saveAgentReview,
   searchAgents,
   setAuthTokenGetter,
 } from "./api/agents.js";
@@ -471,19 +473,21 @@ function getAgentMedia(agent) {
 }
 
 function normalizeReview(review, index = 0, agent = {}) {
+  const rating = Number(review.rating) || 1;
+
   return {
     id: review.id || `${agent.id || "agent"}-review-${index}`,
-    authorInitials: review.authorInitials || getTeamInitials(review.authorName || "Atlas Reviewer"),
-    authorName: review.authorName || "Atlas Reviewer",
-    authorTeam: review.authorTeam || "Contributor",
-    rating: Math.min(5, Math.max(1, Number(review.rating) || 1)),
+    authorInitials: review.authorInitials || getTeamInitials(review.authorName || review.author_name || "Atlas Reviewer"),
+    authorName: review.authorName || review.author_name || "Atlas Reviewer",
+    authorTeam: review.authorTeam || review.author_username || "Contributor",
+    rating: Math.min(5, Math.max(1, rating)),
     title: review.title || "Useful in production",
-    body: review.body || "This review has not added details yet.",
-    constraints: review.constraints || "",
+    body: review.body || review.experience || "This review has not added details yet.",
+    constraints: review.constraints || review.downsides || "",
     helpfulCount: Number(review.helpfulCount || 0),
     notHelpfulCount: Number(review.notHelpfulCount || 0),
     userVote: review.userVote === "helpful" || review.userVote === "not-helpful" ? review.userVote : null,
-    createdAt: review.createdAt || new Date().toISOString(),
+    createdAt: review.createdAt || review.created_at || new Date().toISOString(),
   };
 }
 
@@ -2166,7 +2170,7 @@ function AgentPage({
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaFading, setMediaFading] = useState(false);
   const [downloadCount, setDownloadCount] = useState(agent.downloads || 0);
-  const [reviews, setReviews] = useState(() => getInitialReviews(agent));
+  const [reviews, setReviews] = useState([]);
   const [reviewSort, setReviewSort] = useState("recent");
   const [reviewFormOpen, setReviewFormOpen] = useState(false);
   const [hoverRating, setHoverRating] = useState(0);
@@ -2180,21 +2184,48 @@ function AgentPage({
   });
 
   useEffect(() => {
-    setActiveMediaIndex(0);
-    setMediaFading(false);
-    setDownloadCount(agent.downloads || 0);
-    setReviews(getInitialReviews(agent));
-    setReviewSort("recent");
-    setReviewFormOpen(false);
-    setHoverRating(0);
-    setInvalidFields({});
-    setNewReviewIds([]);
-    setReviewForm({
-      rating: 0,
-      title: "",
-      body: "",
-      constraints: "",
-    });
+    let ignore = false;
+  
+    async function loadReviews() {
+      setActiveMediaIndex(0);
+      setMediaFading(false);
+      setDownloadCount(agent.downloads || 0);
+      setReviewSort("recent");
+      setReviewFormOpen(false);
+      setHoverRating(0);
+      setInvalidFields({});
+      setNewReviewIds([]);
+      setReviewForm({
+        rating: 0,
+        title: "",
+        body: "",
+        constraints: "",
+      });
+  
+      try {
+        const data = await getAgentReviews(agent.id);
+  
+        if (ignore) return;
+  
+        const loadedReviews = Array.isArray(data.reviews)
+          ? data.reviews.map((review, index) => normalizeReview(review, index, agent))
+          : [];
+  
+        setReviews(loadedReviews);
+      } catch (error) {
+        console.error("Could not load reviews:", error);
+  
+        if (!ignore) {
+          setReviews([]);
+        }
+      }
+    }
+  
+    loadReviews();
+  
+    return () => {
+      ignore = true;
+    };
   }, [agent]);
 
   useEffect(() => {
@@ -2298,52 +2329,55 @@ function AgentPage({
     onToast(vote === "helpful" ? "Marked as helpful" : "Marked as not helpful");
   }
 
-  function submitReview(event) {
+  async function submitReview(event) {
     event.preventDefault();
+  
     const missing = {
       rating: reviewForm.rating < 1,
       body: !reviewForm.body.trim(),
+      constraints: !reviewForm.constraints.trim(),
     };
-
-    if (missing.rating || missing.body) {
+  
+    if (missing.rating || missing.body || missing.constraints) {
       setInvalidFields(missing);
       window.clearTimeout(validationTimerRef.current);
       validationTimerRef.current = window.setTimeout(() => setInvalidFields({}), 340);
       return;
     }
-
-    const reviewId = `${agent.id}-local-review-${Date.now()}`;
-    const nextReview = normalizeReview(
-      {
-        id: reviewId,
-        authorInitials: "YO",
-        authorName: "You",
-        authorTeam: "Atlas Hub",
+  
+    try {
+      const result = await saveAgentReview(agent.id, {
         rating: reviewForm.rating,
         title: reviewForm.title.trim() || `Review for ${agent.name}`,
         body: reviewForm.body.trim(),
         constraints: reviewForm.constraints.trim(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-        userVote: null,
-        createdAt: new Date().toISOString(),
-      },
-      0,
-      agent,
-    );
-
-    setReviews((current) => [nextReview, ...current]);
-    setNewReviewIds((current) => [reviewId, ...current]);
-    setReviewForm({
-      rating: 0,
-      title: "",
-      body: "",
-      constraints: "",
-    });
-    setHoverRating(0);
-    setReviewSort("recent");
-    setReviewFormOpen(false);
-    onToast("Review posted");
+      });
+  
+      const savedReview = normalizeReview(result.review, 0, agent);
+  
+      setReviews((current) => {
+        const withoutExisting = current.filter(
+          (review) => String(review.id) !== String(savedReview.id),
+        );
+  
+        return [savedReview, ...withoutExisting];
+      });
+  
+      setNewReviewIds((current) => [savedReview.id, ...current]);
+      setReviewForm({
+        rating: 0,
+        title: "",
+        body: "",
+        constraints: "",
+      });
+      setHoverRating(0);
+      setReviewSort("recent");
+      setReviewFormOpen(false);
+      onToast("Review posted");
+    } catch (error) {
+      console.error("Review submit failed:", error);
+      onToast(error.message || "Could not post review");
+    }
   }
 
   return (
@@ -2813,7 +2847,7 @@ function ReviewForm({
       <label>
         <span>Limitations found (optional)</span>
         <textarea
-          className="constraints-input"
+          className={`constraints-input ${invalidFields.constraints ? "shake-field" : ""}`}
           value={form.constraints}
           onChange={(event) => onUpdate("constraints", event.target.value)}
           placeholder="Edge cases, model quirks, things to watch out for"

@@ -62,6 +62,17 @@ export function publishAgent(formData) {
   });
 }
 
+export function getAgentReviews(agentId) {
+  return request(`/api/agents/${agentId}/reviews`);
+}
+
+export function saveAgentReview(agentId, payload) {
+  return request(`/api/agents/${agentId}/reviews`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getApiBaseLabel() {
   return API_BASE_URL || "Vite proxy /api";
 }
