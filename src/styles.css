@@ -71,81 +71,105 @@ button {
   cursor: pointer;
 }
 
-* {
-  cursor: none !important;
-}
-
 input,
 textarea,
 select {
-  cursor: text !important;
+  cursor: text;
 }
 
-button,
-[role="button"],
-a {
-  cursor: none !important;
+@media (pointer: fine) {
+  body.custom-cursor-enabled,
+  body.custom-cursor-enabled * {
+    cursor: none !important;
+  }
+
+  body.custom-cursor-enabled input,
+  body.custom-cursor-enabled textarea,
+  body.custom-cursor-enabled select,
+  body.custom-cursor-enabled [contenteditable="true"] {
+    cursor: text !important;
+  }
 }
 
-#cursor-dot {
+.custom-cursor {
   position: fixed;
-  top: -5px;
-  left: -5px;
+  top: 0;
+  left: 0;
   z-index: 9999;
-  width: 10px;
-  height: 10px;
   pointer-events: none;
+  opacity: 0;
+  transform: translate3d(var(--cursor-x, 50vw), var(--cursor-y, 50vh), 0)
+    translate(-50%, -50%);
+  transition:
+    opacity 120ms ease,
+    width 160ms ease,
+    height 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+  will-change: transform;
+}
+
+.custom-cursor-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--gold);
-  box-shadow: 0 0 8px rgba(201, 168, 76, 0.6);
-  transition:
-    width 0.15s ease,
-    height 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    top 0.15s ease,
-    left 0.15s ease;
-  will-change: transform;
+  box-shadow: 0 0 12px rgba(208, 169, 79, 0.55);
 }
 
-#cursor-trail {
-  position: fixed;
-  top: -12px;
-  left: -12px;
+.custom-cursor-ring {
   z-index: 9998;
-  width: 24px;
-  height: 24px;
-  pointer-events: none;
-  border: 1px solid rgba(201, 168, 76, 0.35);
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(208, 169, 79, 0.42);
   border-radius: 50%;
-  transition:
-    width 0.15s ease,
-    height 0.15s ease,
-    border-color 0.15s ease,
-    top 0.15s ease,
-    left 0.15s ease;
-  will-change: transform;
+  background: rgba(208, 169, 79, 0.035);
 }
 
-.app-shell.cursor--hovering #cursor-dot {
-  top: -7px;
-  left: -7px;
-  width: 14px;
-  height: 14px;
-  background: var(--gold2);
-  box-shadow: 0 0 16px rgba(201, 168, 76, 0.5);
+body.custom-cursor-ready .custom-cursor {
+  opacity: 1;
 }
 
-.app-shell.cursor--hovering #cursor-trail {
-  top: -18px;
-  left: -18px;
-  width: 36px;
-  height: 36px;
-  border-color: rgba(201, 168, 76, 0.5);
+body.custom-cursor-hidden .custom-cursor,
+body.custom-cursor-text .custom-cursor {
+  opacity: 0;
 }
 
-.app-shell.cursor--drop-active #cursor-dot {
-  animation: cursor-pulse 700ms ease-in-out infinite;
+body.custom-cursor-hovering .custom-cursor-dot {
+  width: 13px;
+  height: 13px;
+  background: var(--gold-strong);
+  box-shadow: 0 0 18px rgba(242, 206, 114, 0.58);
+}
+
+body.custom-cursor-hovering .custom-cursor-ring {
+  width: 42px;
+  height: 42px;
+  border-color: rgba(242, 206, 114, 0.58);
+  background: rgba(208, 169, 79, 0.08);
+}
+
+body.custom-cursor-pressed .custom-cursor-dot {
+  width: 7px;
+  height: 7px;
+}
+
+body.custom-cursor-pressed .custom-cursor-ring {
+  width: 22px;
+  height: 22px;
+  border-color: rgba(242, 206, 114, 0.72);
+}
+
+body.custom-cursor-drop-active .custom-cursor-dot {
+  animation: cursorPulse 700ms ease-in-out infinite;
+}
+
+body.custom-cursor-drop-active .custom-cursor-ring {
+  width: 52px;
+  height: 52px;
+  border-color: rgba(111, 224, 157, 0.62);
+  background: rgba(111, 224, 157, 0.08);
 }
 
 .app-shell {
@@ -2999,21 +3023,13 @@ input::placeholder {
   }
 }
 
-@keyframes cursor-pulse {
+@keyframes cursorPulse {
   0%,
   100% {
-    top: -5px;
-    left: -5px;
-    width: 10px;
-    height: 10px;
-    box-shadow: 0 0 8px rgba(201, 168, 76, 0.6);
+    box-shadow: 0 0 12px rgba(208, 169, 79, 0.55);
   }
   50% {
-    top: -7px;
-    left: -7px;
-    width: 14px;
-    height: 14px;
-    box-shadow: 0 0 18px rgba(201, 168, 76, 0.72);
+    box-shadow: 0 0 24px rgba(111, 224, 157, 0.72);
   }
 }
 
@@ -3246,19 +3262,3 @@ input::placeholder {
   }
 }
 
-@media (hover: none) {
-  * {
-    cursor: auto !important;
-  }
-
-  input,
-  textarea,
-  select {
-    cursor: text !important;
-  }
-
-  #cursor-dot,
-  #cursor-trail {
-    display: none;
-  }
-}

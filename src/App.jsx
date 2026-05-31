@@ -309,7 +309,6 @@ function sortReviews(reviews, sortBy) {
 
 export default function App() {
   const [screen, setScreen] = useState(getInitialScreen);
-  const appShellRef = useRef(null);
   const screenRef = useRef(screen);
   const prevScreenRef = useRef(screen === "upload" ? "home" : screen);
   const transitionTimerRef = useRef(null);
@@ -344,54 +343,105 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
-    const dot = document.getElementById("cursor-dot");
-    const trail = document.getElementById("cursor-trail");
-    const shell = appShellRef.current;
-    if (!dot || !trail || !shell) return undefined;
+    const cursorRoot = document.body;
+    const dot = document.querySelector(".custom-cursor-dot");
+    const ring = document.querySelector(".custom-cursor-ring");
+    const supportsFinePointer = window.matchMedia("(pointer: fine)").matches;
 
-    let dotX = window.innerWidth / 2;
-    let dotY = window.innerHeight / 2;
-    let trailX = dotX;
-    let trailY = dotY;
+    if (!dot || !ring || !supportsFinePointer) return undefined;
+
+    let pointerX = window.innerWidth / 2;
+    let pointerY = window.innerHeight / 2;
+    let ringX = pointerX;
+    let ringY = pointerY;
     let rafId = 0;
 
-    const onMove = (event) => {
-      dotX = event.clientX;
-      dotY = event.clientY;
-    };
+    const hoverSelector = "button, a, [role='button'], label, .agent-card, .related-agent-row";
+    const textSelector = "input, textarea, select, [contenteditable='true']";
 
-    const hoverSelector = "button, a, [role='button']";
-
-    const onMouseOver = (event) => {
-      if (event.target.closest(hoverSelector)) {
-        shell.classList.add("cursor--hovering");
-      }
-    };
-
-    const onMouseOut = (event) => {
-      const hoveredElement = event.target.closest(hoverSelector);
-      if (hoveredElement && !hoveredElement.contains(event.relatedTarget)) {
-        shell.classList.remove("cursor--hovering");
-      }
-    };
+    function setCursorPosition(element, x, y) {
+      element.style.setProperty("--cursor-x", `${x}px`);
+      element.style.setProperty("--cursor-y", `${y}px`);
+    }
 
     function animate() {
-      trailX += (dotX - trailX) * 0.12;
-      trailY += (dotY - trailY) * 0.12;
-      dot.style.transform = `translate(${dotX}px, ${dotY}px)`;
-      trail.style.transform = `translate(${trailX}px, ${trailY}px)`;
+      ringX += (pointerX - ringX) * 0.16;
+      ringY += (pointerY - ringY) * 0.16;
+      setCursorPosition(dot, pointerX, pointerY);
+      setCursorPosition(ring, ringX, ringY);
       rafId = window.requestAnimationFrame(animate);
     }
 
-    window.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseover", onMouseOver);
-    document.addEventListener("mouseout", onMouseOut);
+    function syncTargetState(target) {
+      if (!(target instanceof Element)) return;
+      const isText = Boolean(target.closest(textSelector));
+      const isHovering = Boolean(target.closest(hoverSelector));
+      cursorRoot.classList.toggle("custom-cursor-text", isText);
+      cursorRoot.classList.toggle("custom-cursor-hovering", !isText && isHovering);
+    }
+
+    function handlePointerMove(event) {
+      if (event.pointerType && event.pointerType !== "mouse" && event.pointerType !== "pen") return;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      cursorRoot.classList.add("custom-cursor-ready");
+      cursorRoot.classList.remove("custom-cursor-hidden");
+      syncTargetState(event.target);
+    }
+
+    function handlePointerOver(event) {
+      syncTargetState(event.target);
+    }
+
+    function handlePointerOut(event) {
+      if (event.relatedTarget instanceof Element) {
+        syncTargetState(event.relatedTarget);
+        return;
+      }
+      cursorRoot.classList.remove("custom-cursor-hovering", "custom-cursor-text");
+    }
+
+    function handlePointerDown() {
+      cursorRoot.classList.add("custom-cursor-pressed");
+    }
+
+    function handlePointerUp() {
+      cursorRoot.classList.remove("custom-cursor-pressed");
+    }
+
+    function handlePointerLeave() {
+      cursorRoot.classList.add("custom-cursor-hidden");
+      cursorRoot.classList.remove(
+        "custom-cursor-hovering",
+        "custom-cursor-pressed",
+        "custom-cursor-text",
+      );
+    }
+
+    cursorRoot.classList.add("custom-cursor-enabled");
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    window.addEventListener("pointerup", handlePointerUp, { passive: true });
+    document.addEventListener("pointerover", handlePointerOver);
+    document.addEventListener("pointerout", handlePointerOut);
+    document.documentElement.addEventListener("mouseleave", handlePointerLeave);
     rafId = window.requestAnimationFrame(animate);
 
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseover", onMouseOver);
-      document.removeEventListener("mouseout", onMouseOut);
+      cursorRoot.classList.remove(
+        "custom-cursor-enabled",
+        "custom-cursor-ready",
+        "custom-cursor-hidden",
+        "custom-cursor-hovering",
+        "custom-cursor-pressed",
+        "custom-cursor-text",
+      );
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointerover", handlePointerOver);
+      document.removeEventListener("pointerout", handlePointerOut);
+      document.documentElement.removeEventListener("mouseleave", handlePointerLeave);
       window.cancelAnimationFrame(rafId);
     };
   }, []);
@@ -592,67 +642,66 @@ export default function App() {
   }
 
   return (
-    <div
-      className={`app-shell ${isMounted ? "is-mounted" : ""} ${screenTransition}`}
-      ref={appShellRef}
-    >
-      <div id="cursor-dot" aria-hidden="true" />
-      <div id="cursor-trail" aria-hidden="true" />
-      <Nav
-        screen={screen}
-        onNavigate={navigate}
-        onUpload={() => navigate("upload")}
-        apiState={apiState}
-        scrolled={scrolled}
-        scrollProgress={scrollProgress}
-      />
+    <>
+      <div className="custom-cursor custom-cursor-ring" aria-hidden="true" />
+      <div className="custom-cursor custom-cursor-dot" aria-hidden="true" />
+      <div className={`app-shell ${isMounted ? "is-mounted" : ""} ${screenTransition}`}>
+        <Nav
+          screen={screen}
+          onNavigate={navigate}
+          onUpload={() => navigate("upload")}
+          apiState={apiState}
+          scrolled={scrolled}
+          scrollProgress={scrollProgress}
+        />
 
-      <main>
-        {screen === "home" ? (
-          <Landing
-            query={landingQuery}
-            setQuery={setLandingQuery}
-            onSearch={submitLandingSearch}
-            onBrowse={() => navigate("browse")}
-            onUpload={() => navigate("upload")}
-            agentCount={agents.length}
-          />
-        ) : screen === "upload" ? (
-          <UploadPage onUploaded={addUploadedAgent} onBack={closeUploadPage} onToast={showToast} />
-        ) : screen === "agent" && selectedAgent ? (
-          <AgentPage
-            agent={selectedAgent}
-            allAgents={agents}
-            onBack={closeAgent}
-            onNavigateToAgent={openAgent}
-            onToast={showToast}
-          />
-        ) : (
-          <Browse
-            agents={filteredAgents}
-            shelves={shelves}
-            categories={categories}
-            category={category}
-            setCategory={setCategory}
-            model={model}
-            setModel={setModel}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
-            publicOnly={publicOnly}
-            setPublicOnly={setPublicOnly}
-            query={query}
-            setQuery={setQuery}
-            searchState={searchState}
-            apiState={apiState}
-            onOpenAgent={openAgent}
-            onUpload={() => navigate("upload")}
-            onToast={showToast}
-          />
-        )}
-      </main>
+        <main>
+          {screen === "home" ? (
+            <Landing
+              query={landingQuery}
+              setQuery={setLandingQuery}
+              onSearch={submitLandingSearch}
+              onBrowse={() => navigate("browse")}
+              onUpload={() => navigate("upload")}
+              agentCount={agents.length}
+            />
+          ) : screen === "upload" ? (
+            <UploadPage onUploaded={addUploadedAgent} onBack={closeUploadPage} onToast={showToast} />
+          ) : screen === "agent" && selectedAgent ? (
+            <AgentPage
+              agent={selectedAgent}
+              allAgents={agents}
+              onBack={closeAgent}
+              onNavigateToAgent={openAgent}
+              onToast={showToast}
+            />
+          ) : (
+            <Browse
+              agents={filteredAgents}
+              shelves={shelves}
+              categories={categories}
+              category={category}
+              setCategory={setCategory}
+              model={model}
+              setModel={setModel}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              publicOnly={publicOnly}
+              setPublicOnly={setPublicOnly}
+              query={query}
+              setQuery={setQuery}
+              searchState={searchState}
+              apiState={apiState}
+              onOpenAgent={openAgent}
+              onUpload={() => navigate("upload")}
+              onToast={showToast}
+            />
+          )}
+        </main>
 
-      <Toast message={toast.message} visible={toast.visible} />
-    </div>
+        <Toast message={toast.message} visible={toast.visible} />
+      </div>
+    </>
   );
 }
 
@@ -2156,9 +2205,8 @@ function UploadPage({ onUploaded, onBack, onToast }) {
   }, []);
 
   useEffect(() => {
-    const shell = document.querySelector(".app-shell");
-    shell?.classList.toggle("cursor--drop-active", isDragActive);
-    return () => shell?.classList.remove("cursor--drop-active");
+    document.body.classList.toggle("custom-cursor-drop-active", isDragActive);
+    return () => document.body.classList.remove("custom-cursor-drop-active");
   }, [isDragActive]);
 
   useEffect(() => {
