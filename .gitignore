@@ -4,5 +4,8 @@
 node_modules
 dist
 .cache
+.env
+.env.local
+.env.*.local
 vite-dev*.log
 atlas-hub-*.png

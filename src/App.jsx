@@ -4,8 +4,6 @@ import {
   ArrowRight,
   Boxes,
   Check,
-  ChevronRight,
-  CircleAlert,
   Cloud,
   Database,
   Download,
@@ -39,6 +37,12 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 const modelOptions = ["all", "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"];
 const screenTransitionMs = 260;
 const heroTitleWords = "The agent registry for reusable AI agents".split(" ");
+const uploadTitleWords = "Publish an agent".split(" ");
+const uploadSubtitleWords =
+  "Share a reusable agent with your team. Fill in the details, then use Magic to generate the rest.".split(
+    " ",
+  );
+const descriptionLimit = 300;
 
 function normalizeAgent(agent) {
   const idNumber = Number(agent.id) || Math.floor(Math.random() * 10000);
@@ -94,11 +98,12 @@ function titleCase(value) {
 
 function getInitialScreen() {
   const hash = window.location.hash.replace("#", "");
-  return hash === "browse" || hash === "agent" ? hash : "home";
+  return hash === "browse" || hash === "agent" || hash === "upload" ? hash : "home";
 }
 
 function getScreenUrl(screen) {
-  const hash = screen === "browse" ? "#browse" : screen === "agent" ? "#agent" : "";
+  const hash =
+    screen === "browse" ? "#browse" : screen === "agent" ? "#agent" : screen === "upload" ? "#upload" : "";
   return `${window.location.pathname}${window.location.search}${hash}`;
 }
 
@@ -106,6 +111,36 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Recent";
   return dateFormatter.format(date);
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+function typewriterFill(setter, text, ms = 600) {
+  return new Promise((resolve) => {
+    const value = String(text || "");
+    setter("");
+
+    if (!value) {
+      resolve();
+      return;
+    }
+
+    let index = 0;
+    const stepMs = Math.max(8, Math.floor(ms / value.length));
+    const intervalId = window.setInterval(() => {
+      index += 1;
+      setter(value.slice(0, index));
+
+      if (index >= value.length) {
+        window.clearInterval(intervalId);
+        resolve();
+      }
+    }, stepMs);
+  });
 }
 
 function parseStatValue(value) {
@@ -274,7 +309,9 @@ function sortReviews(reviews, sortBy) {
 
 export default function App() {
   const [screen, setScreen] = useState(getInitialScreen);
+  const appShellRef = useRef(null);
   const screenRef = useRef(screen);
+  const prevScreenRef = useRef(screen === "upload" ? "home" : screen);
   const transitionTimerRef = useRef(null);
   const toastTimerRef = useRef(null);
   const detailRequestRef = useRef(0);
@@ -294,7 +331,6 @@ export default function App() {
   const [publicOnly, setPublicOnly] = useState(true);
   const [searchState, setSearchState] = useState({ status: "idle", results: null, message: "" });
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [landingQuery, setLandingQuery] = useState("");
   const [toast, setToast] = useState({ message: "", visible: false });
 
@@ -307,6 +343,59 @@ export default function App() {
     screenRef.current = screen;
   }, [screen]);
 
+  useEffect(() => {
+    const dot = document.getElementById("cursor-dot");
+    const trail = document.getElementById("cursor-trail");
+    const shell = appShellRef.current;
+    if (!dot || !trail || !shell) return undefined;
+
+    let dotX = window.innerWidth / 2;
+    let dotY = window.innerHeight / 2;
+    let trailX = dotX;
+    let trailY = dotY;
+    let rafId = 0;
+
+    const onMove = (event) => {
+      dotX = event.clientX;
+      dotY = event.clientY;
+    };
+
+    const hoverSelector = "button, a, [role='button']";
+
+    const onMouseOver = (event) => {
+      if (event.target.closest(hoverSelector)) {
+        shell.classList.add("cursor--hovering");
+      }
+    };
+
+    const onMouseOut = (event) => {
+      const hoveredElement = event.target.closest(hoverSelector);
+      if (hoveredElement && !hoveredElement.contains(event.relatedTarget)) {
+        shell.classList.remove("cursor--hovering");
+      }
+    };
+
+    function animate() {
+      trailX += (dotX - trailX) * 0.12;
+      trailY += (dotY - trailY) * 0.12;
+      dot.style.transform = `translate(${dotX}px, ${dotY}px)`;
+      trail.style.transform = `translate(${trailX}px, ${trailY}px)`;
+      rafId = window.requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseover", onMouseOver);
+    document.addEventListener("mouseout", onMouseOut);
+    rafId = window.requestAnimationFrame(animate);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseover", onMouseOver);
+      document.removeEventListener("mouseout", onMouseOut);
+      window.cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   const changeScreen = useCallback((nextScreen, writeHash = true) => {
     if (nextScreen === screenRef.current) {
       if (writeHash) {
@@ -317,6 +406,7 @@ export default function App() {
 
     window.clearTimeout(transitionTimerRef.current);
     setScreenTransition("screen-exit");
+    prevScreenRef.current = screenRef.current;
 
     transitionTimerRef.current = window.setTimeout(() => {
       if (writeHash) {
@@ -460,6 +550,10 @@ export default function App() {
     changeScreen(nextScreen);
   }
 
+  function closeUploadPage() {
+    navigate(prevScreenRef.current === "browse" ? "browse" : "home");
+  }
+
   function submitLandingSearch(event) {
     event.preventDefault();
     setQuery(landingQuery);
@@ -498,11 +592,16 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${isMounted ? "is-mounted" : ""} ${screenTransition}`}>
+    <div
+      className={`app-shell ${isMounted ? "is-mounted" : ""} ${screenTransition}`}
+      ref={appShellRef}
+    >
+      <div id="cursor-dot" aria-hidden="true" />
+      <div id="cursor-trail" aria-hidden="true" />
       <Nav
         screen={screen}
         onNavigate={navigate}
-        onUpload={() => setUploadOpen(true)}
+        onUpload={() => navigate("upload")}
         apiState={apiState}
         scrolled={scrolled}
         scrollProgress={scrollProgress}
@@ -515,9 +614,11 @@ export default function App() {
             setQuery={setLandingQuery}
             onSearch={submitLandingSearch}
             onBrowse={() => navigate("browse")}
-            onUpload={() => setUploadOpen(true)}
+            onUpload={() => navigate("upload")}
             agentCount={agents.length}
           />
+        ) : screen === "upload" ? (
+          <UploadPage onUploaded={addUploadedAgent} onBack={closeUploadPage} onToast={showToast} />
         ) : screen === "agent" && selectedAgent ? (
           <AgentPage
             agent={selectedAgent}
@@ -544,18 +645,11 @@ export default function App() {
             searchState={searchState}
             apiState={apiState}
             onOpenAgent={openAgent}
-            onUpload={() => setUploadOpen(true)}
+            onUpload={() => navigate("upload")}
+            onToast={showToast}
           />
         )}
       </main>
-
-      {uploadOpen ? (
-          <UploadDialog
-            onClose={() => setUploadOpen(false)}
-            onUploaded={addUploadedAgent}
-            onToast={showToast}
-          />
-        ) : null}
 
       <Toast message={toast.message} visible={toast.visible} />
     </div>
@@ -817,9 +911,15 @@ function Browse({
   apiState,
   onOpenAgent,
   onUpload,
+  onToast,
 }) {
+  const browseRef = useRef(null);
+  const dragCleanupsRef = useRef([]);
+
   useEffect(() => {
-    const animatedElements = Array.from(document.querySelectorAll(".shelf, .agent-card"));
+    const animatedElements = Array.from(
+      browseRef.current?.querySelectorAll(".shelf, .agent-card") || [],
+    );
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -833,14 +933,217 @@ function Browse({
 
     animatedElements.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
-  }, [shelves, agents]);
+  }, [apiState.status, shelves, agents]);
+
+  useEffect(() => {
+    dragCleanupsRef.current.forEach((cleanup) => cleanup());
+    dragCleanupsRef.current = [];
+
+    const frameId = window.requestAnimationFrame(() => {
+      const tracks = Array.from(browseRef.current?.querySelectorAll(".shelf-track") || []);
+      dragCleanupsRef.current = tracks.map((track) => {
+        let velX = 0;
+        let lastX = 0;
+        let isPointerDown = false;
+        let rafId = null;
+        let wheelRafId = null;
+        let wheelIdleTimer = null;
+        let wheelVelX = 0;
+        let lastTime = 0;
+        let dragDistance = 0;
+        let clearDragFlagTimer = null;
+
+        const updateFade = () => {
+          track.classList.toggle("has-scrolled-left", track.scrollLeft > 0);
+        };
+
+        function applyMomentum() {
+          if (Math.abs(velX) < 0.5) {
+            velX = 0;
+            rafId = null;
+            return;
+          }
+
+          track.scrollLeft += velX;
+          velX *= 0.92;
+          updateFade();
+          rafId = window.requestAnimationFrame(applyMomentum);
+        }
+
+        function applyWheelMomentum() {
+          if (Math.abs(wheelVelX) < 0.35) {
+            wheelVelX = 0;
+            wheelRafId = null;
+            window.clearTimeout(wheelIdleTimer);
+            wheelIdleTimer = window.setTimeout(() => {
+              track.classList.remove("is-wheel-scrolling");
+            }, 140);
+            updateFade();
+            return;
+          }
+
+          track.scrollLeft += wheelVelX;
+          wheelVelX *= 0.84;
+          updateFade();
+          wheelRafId = window.requestAnimationFrame(applyWheelMomentum);
+        }
+
+        const handlePointerDown = (event) => {
+          if (event.pointerType === "touch") return;
+
+          isPointerDown = true;
+          lastX = event.clientX;
+          lastTime = performance.now();
+          velX = 0;
+          dragDistance = 0;
+          window.clearTimeout(clearDragFlagTimer);
+          track.dataset.wasDragging = "false";
+          track.classList.add("dragging");
+          track.style.cursor = "grabbing";
+
+          if (rafId !== null) {
+            window.cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
+          if (wheelRafId !== null) {
+            window.cancelAnimationFrame(wheelRafId);
+            wheelRafId = null;
+          }
+          wheelVelX = 0;
+          track.classList.remove("is-wheel-scrolling");
+        };
+
+        const handlePointerMove = (event) => {
+          if (!isPointerDown) return;
+
+          const now = performance.now();
+          const dt = Math.max(now - lastTime, 1);
+          const dx = event.clientX - lastX;
+          const nextDragDistance = dragDistance + Math.abs(dx);
+
+          if (nextDragDistance <= 6) {
+            dragDistance = nextDragDistance;
+            lastX = event.clientX;
+            lastTime = now;
+            return;
+          }
+
+          event.preventDefault();
+
+          velX = (dx / dt) * 16;
+          dragDistance = nextDragDistance;
+          if (dragDistance > 6) {
+            browseRef.current?.classList.add("is-dragging");
+            if (!track.hasPointerCapture(event.pointerId)) {
+              track.setPointerCapture(event.pointerId);
+            }
+          }
+          track.scrollLeft -= dx;
+          lastX = event.clientX;
+          lastTime = now;
+          updateFade();
+        };
+
+        const stopDrag = (event) => {
+          if (!isPointerDown) return;
+
+          isPointerDown = false;
+          const wasDragging = dragDistance > 6;
+          track.dataset.wasDragging = wasDragging ? "true" : "false";
+          if (wasDragging) {
+            window.clearTimeout(clearDragFlagTimer);
+            clearDragFlagTimer = window.setTimeout(() => {
+              track.dataset.wasDragging = "false";
+            }, 150);
+          }
+          dragDistance = 0;
+          track.classList.remove("dragging");
+          track.style.cursor = "grab";
+          browseRef.current?.classList.remove("is-dragging");
+
+          if (event?.pointerId !== undefined && track.hasPointerCapture(event.pointerId)) {
+            track.releasePointerCapture(event.pointerId);
+          }
+
+          rafId = window.requestAnimationFrame(applyMomentum);
+        };
+
+        const handleWheel = (event) => {
+          const horizontalDelta = Math.abs(event.deltaX);
+          const verticalDelta = Math.abs(event.deltaY);
+          const hasHorizontalIntent =
+            horizontalDelta >= 5 && horizontalDelta > Math.max(1, verticalDelta * 1.15);
+          const isShiftWheel = event.shiftKey && verticalDelta > horizontalDelta;
+
+          if ((!hasHorizontalIntent && !isShiftWheel) || event.ctrlKey) return;
+
+          event.preventDefault();
+          event.stopPropagation();
+
+          const wheelDelta = isShiftWheel ? event.deltaY : event.deltaX;
+          const nextVelocity = wheelVelX + wheelDelta * 0.48;
+          wheelVelX = Math.max(-46, Math.min(46, nextVelocity));
+          track.classList.add("is-wheel-scrolling");
+          window.clearTimeout(wheelIdleTimer);
+
+          if (wheelRafId === null) {
+            wheelRafId = window.requestAnimationFrame(applyWheelMomentum);
+          }
+        };
+
+        updateFade();
+        track.addEventListener("scroll", updateFade, { passive: true });
+        track.addEventListener("pointerdown", handlePointerDown);
+        track.addEventListener("pointermove", handlePointerMove);
+        track.addEventListener("pointerup", stopDrag);
+        track.addEventListener("pointercancel", stopDrag);
+        track.addEventListener("wheel", handleWheel, { passive: false });
+
+        return () => {
+          if (rafId !== null) {
+            window.cancelAnimationFrame(rafId);
+          }
+          if (wheelRafId !== null) {
+            window.cancelAnimationFrame(wheelRafId);
+          }
+
+          track.dataset.wasDragging = "false";
+          window.clearTimeout(clearDragFlagTimer);
+          window.clearTimeout(wheelIdleTimer);
+          track.style.cursor = "";
+          track.classList.remove("dragging");
+          track.classList.remove("is-wheel-scrolling");
+          browseRef.current?.classList.remove("is-dragging");
+          track.removeEventListener("scroll", updateFade);
+          track.removeEventListener("pointerdown", handlePointerDown);
+          track.removeEventListener("pointermove", handlePointerMove);
+          track.removeEventListener("pointerup", stopDrag);
+          track.removeEventListener("pointercancel", stopDrag);
+          track.removeEventListener("wheel", handleWheel);
+        };
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      dragCleanupsRef.current.forEach((cleanup) => cleanup());
+      dragCleanupsRef.current = [];
+    };
+  }, [apiState.status, agents.length, shelves.length, category, model, sortBy]);
 
   function commitSearch() {
     setQuery(query.trim());
   }
 
+  function clearFilters() {
+    setQuery("");
+    setCategory("all");
+    setModel("all");
+  }
+
   return (
-    <section className="browse-page">
+    <section className="browse-page browse-container" ref={browseRef}>
       <div className="browse-hero">
         <div>
           <span className="eyebrow">Browse registry</span>
@@ -877,55 +1180,59 @@ function Browse({
           </button>
         </div>
 
-        <div className="filter-toolbar">
-          <label className="select-field">
-            <SlidersHorizontal size={15} />
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-              <option value="recommended">Recommended</option>
-              <option value="newest">Newest</option>
-              <option value="downloads">Most downloaded</option>
-              <option value="endorsements">Most endorsed</option>
-              <option value="similarity">Best match</option>
-            </select>
-          </label>
+        <div className="filter-toolbar shelf-track" aria-label="Browse filters">
+          <div className="flat-tabs filter-tabs" role="tablist" aria-label="Categories">
+            {categories.map((item) => (
+              <button
+                key={item}
+                className={category === item ? "flat-tab active" : "flat-tab"}
+                type="button"
+                onClick={() => setCategory(item)}
+              >
+                {getCategoryLabel(item)}
+              </button>
+            ))}
+          </div>
 
-          <label className="toggle-field">
-            <input
-              checked={publicOnly}
-              onChange={(event) => setPublicOnly(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              <Check size={13} />
-            </span>
-            Public only
-          </label>
-        </div>
+          <span className="filter-divider" aria-hidden="true" />
 
-        <div className="flat-tabs" aria-label="Categories">
-          {categories.map((item) => (
-            <button
-              key={item}
-              className={category === item ? "flat-tab active" : "flat-tab"}
-              type="button"
-              onClick={() => setCategory(item)}
-            >
-              {getCategoryLabel(item)}
-            </button>
-          ))}
-        </div>
+          <div className="flat-tabs filter-tabs model-tabs" role="tablist" aria-label="Models">
+            {modelOptions.map((item) => (
+              <button
+                key={item}
+                className={model === item ? "flat-tab active" : "flat-tab"}
+                type="button"
+                onClick={() => setModel(item)}
+              >
+                {item === "all" ? "All models" : item}
+              </button>
+            ))}
+          </div>
 
-        <div className="flat-tabs model-tabs" aria-label="Models">
-          {modelOptions.map((item) => (
-            <button
-              key={item}
-              className={model === item ? "flat-tab active" : "flat-tab"}
-              type="button"
-              onClick={() => setModel(item)}
-            >
-              {item === "all" ? "All models" : item}
-            </button>
-          ))}
+          <div className="filter-actions">
+            <label className="toggle-field compact-filter-toggle">
+              <input
+                checked={publicOnly}
+                onChange={(event) => setPublicOnly(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <Check size={13} />
+              </span>
+              Public only
+            </label>
+
+            <label className="compact-sort" aria-label="Sort agents">
+              <SlidersHorizontal size={14} />
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                <option value="recommended">Recommended</option>
+                <option value="newest">Newest</option>
+                <option value="downloads">Most downloaded</option>
+                <option value="endorsements">Most endorsed</option>
+                <option value="similarity">Best match</option>
+              </select>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -943,7 +1250,9 @@ function Browse({
         <span className="result-count">{agents.length} agents</span>
       </div>
 
-      {shelves.length ? (
+      {apiState.status === "loading" ? (
+        <BrowseLoadingShelf />
+      ) : shelves.length ? (
         <div className="shelf-stack">
           {shelves.map((shelf, index) => (
             <Fragment key={shelf.title}>
@@ -953,15 +1262,19 @@ function Browse({
                 subtitle={shelf.subtitle}
                 agents={shelf.agents}
                 onOpenAgent={onOpenAgent}
+                onToast={onToast}
               />
             </Fragment>
           ))}
         </div>
       ) : (
         <div className="empty-state">
-          <CircleAlert size={22} />
-          <h3>No agents match the current filters.</h3>
-          <p>Clear a category or model filter to widen the registry.</p>
+          <Search className="empty-state-icon" size={32} />
+          <h3>No agents found</h3>
+          <p>Try a different search or clear your filters.</p>
+          <button className="ghost-btn" type="button" onClick={clearFilters}>
+            Clear filters
+          </button>
         </div>
       )}
     </section>
@@ -978,17 +1291,47 @@ function ShelfDivider() {
   );
 }
 
-function AgentShelf({ title, subtitle, agents, onOpenAgent }) {
+function BrowseLoadingShelf() {
+  return (
+    <div className="shelf-stack">
+      <section className="shelf agent-shelf loading-shelf">
+        <div className="shelf-track skeleton-track" role="presentation" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div className="skeleton-card" key={index}>
+              <span className="skeleton-icon" />
+              <span className="skeleton-line title" />
+              <span className="skeleton-line wide" />
+              <span className="skeleton-line medium" />
+              <span className="skeleton-tags">
+                <span />
+                <span />
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AgentShelf({ title, subtitle, agents, onOpenAgent, onToast }) {
   return (
     <section className="shelf agent-shelf will-animate">
       <div className="shelf-header">
-        <div>
+        <div className="shelf-title-line">
           <h3>{title}</h3>
+          <span aria-hidden="true">{"\u00b7"}</span>
           <p>{subtitle}</p>
         </div>
-        <ChevronRight size={20} />
+        <button
+          className="see-all-link"
+          type="button"
+          onClick={() => onToast("Full category view coming soon.")}
+        >
+          {"See all \u2192"}
+        </button>
       </div>
-      <div className="agent-row" role="list">
+      <div className="agent-row shelf-track" role="list">
         {agents.map((agent, index) => (
           <AgentCard
             key={`${title}-${agent.id}`}
@@ -1022,11 +1365,23 @@ function AgentCard({ agent, index, onOpen }) {
     setTransform(undefined);
   }, []);
 
+  const handleClick = useCallback(
+    (event) => {
+      const track = event.currentTarget.closest(".shelf-track");
+      if (track?.dataset.wasDragging === "true") {
+        track.dataset.wasDragging = "false";
+        return;
+      }
+      onOpen();
+    },
+    [onOpen],
+  );
+
   return (
     <button
       className="agent-card will-animate"
       type="button"
-      onClick={onOpen}
+      onClick={handleClick}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       role="listitem"
@@ -1717,20 +2072,159 @@ function ReviewForm({
   );
 }
 
-function UploadDialog({ onClose, onUploaded, onToast }) {
+function UploadPage({ onUploaded, onBack, onToast }) {
+  const fileInputRef = useRef(null);
+  const dropZoneRef = useRef(null);
+  const submitTimerRef = useRef(null);
   const [form, setForm] = useState({
     title: "",
     userDescription: "",
     userManual: "",
     category: "general",
     model: "",
-    useAiGeneration: true,
+    isPublic: true,
   });
   const [file, setFile] = useState(null);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [state, setState] = useState({ status: "idle", message: "" });
+  const [magicState, setMagicState] = useState({ status: "idle", message: "" });
+  const [magicVisible, setMagicVisible] = useState(false);
+
+  const detailsDone = Boolean(form.title.trim() && form.userDescription.trim());
+  const publishDone = state.status === "success";
+
+  useEffect(() => {
+    setMagicState({ status: "idle", message: "" });
+
+    if (!file) {
+      setMagicVisible(false);
+      return undefined;
+    }
+
+    setMagicVisible(false);
+    const frameId = window.requestAnimationFrame(() => setMagicVisible(true));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [file]);
+
+  useEffect(() => {
+    const zone = dropZoneRef.current;
+    if (!zone) return undefined;
+
+    let dragDepth = 0;
+
+    const preventDrag = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handleDragEnter = (event) => {
+      preventDrag(event);
+      dragDepth += 1;
+      setIsDragActive(true);
+    };
+
+    const handleDragOver = (event) => {
+      preventDrag(event);
+      setIsDragActive(true);
+    };
+
+    const handleDragLeave = (event) => {
+      preventDrag(event);
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) setIsDragActive(false);
+    };
+
+    const handleDrop = (event) => {
+      preventDrag(event);
+      dragDepth = 0;
+      setIsDragActive(false);
+      const nextFile = event.dataTransfer?.files?.[0];
+      if (nextFile) selectFile(nextFile);
+    };
+
+    zone.addEventListener("dragenter", handleDragEnter);
+    zone.addEventListener("dragover", handleDragOver);
+    zone.addEventListener("dragleave", handleDragLeave);
+    zone.addEventListener("drop", handleDrop);
+
+    return () => {
+      zone.removeEventListener("dragenter", handleDragEnter);
+      zone.removeEventListener("dragover", handleDragOver);
+      zone.removeEventListener("dragleave", handleDragLeave);
+      zone.removeEventListener("drop", handleDrop);
+    };
+  }, []);
+
+  useEffect(() => {
+    const shell = document.querySelector(".app-shell");
+    shell?.classList.toggle("cursor--drop-active", isDragActive);
+    return () => shell?.classList.remove("cursor--drop-active");
+  }, [isDragActive]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(submitTimerRef.current);
+  }, []);
 
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
+    const nextValue =
+      field === "userDescription" ? String(value).slice(0, descriptionLimit) : value;
+    setForm((current) => ({ ...current, [field]: nextValue }));
+    if (state.status === "error") setState({ status: "idle", message: "" });
+  }
+
+  function selectFile(nextFile) {
+    setFile(nextFile);
+    setState({ status: "idle", message: "" });
+    setMagicState({ status: "idle", message: "" });
+  }
+
+  function clearFile() {
+    setFile(null);
+    setState({ status: "idle", message: "" });
+    setMagicState({ status: "idle", message: "" });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleMagic() {
+    if (!file) return;
+
+    setMagicState({ status: "loading", message: "Reading file..." });
+    try {
+      const payload = new FormData();
+      payload.append("agentFile", file);
+      payload.append("useAiGeneration", "true");
+
+      const title = form.title.trim() || file.name.replace(/\.[^/.]+$/, "");
+      if (title) payload.append("title", title);
+      if (form.category) payload.append("category", form.category);
+
+      const result = await uploadAgent(payload);
+
+      if (result?.data?.title && !form.title.trim()) updateField("title", result.data.title);
+      await Promise.all([
+        result?.data?.description
+          ? typewriterFill(
+              (value) => updateField("userDescription", value),
+              String(result.data.description).slice(0, descriptionLimit),
+              600,
+            )
+          : Promise.resolve(),
+        result?.data?.manual
+          ? typewriterFill((value) => updateField("userManual", value), result.data.manual, 600)
+          : Promise.resolve(),
+      ]);
+
+      setMagicState({ status: "done", message: "Fields filled from your file." });
+    } catch (error) {
+      setMagicState({
+        status: "error",
+        message: error.message || "Magic failed - fill fields manually.",
+      });
+    }
   }
 
   async function handleSubmit(event) {
@@ -1751,12 +2245,12 @@ function UploadDialog({ onClose, onUploaded, onToast }) {
     payload.append("userManual", form.userManual.trim());
     payload.append("category", form.category);
     payload.append("model", form.model.trim());
-    payload.append("useAiGeneration", String(form.useAiGeneration));
+    payload.append("isPublic", String(form.isPublic));
 
     setState({ status: "loading", message: "Uploading agent" });
     try {
       const result = await uploadAgent(payload);
-      onUploaded({
+      const uploadedAgent = {
         id: result?.data?.id || Date.now(),
         name: result?.data?.title || form.title,
         description: result?.data?.description || form.userDescription,
@@ -1764,12 +2258,16 @@ function UploadDialog({ onClose, onUploaded, onToast }) {
         category: form.category,
         model: form.model || "unknown",
         file_name: file.name,
+        is_public: form.isPublic,
         created_at: new Date().toISOString(),
         featured: true,
-      });
+      };
       setState({ status: "success", message: "Agent uploaded" });
       onToast("Agent published to the registry.");
-      window.setTimeout(onClose, 550);
+      submitTimerRef.current = window.setTimeout(() => {
+        onUploaded(uploadedAgent);
+        onBack();
+      }, 800);
     } catch (error) {
       setState({ status: "error", message: error.message });
       onToast(error.message);
@@ -1777,97 +2275,269 @@ function UploadDialog({ onClose, onUploaded, onToast }) {
   }
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <form className="upload-dialog" onSubmit={handleSubmit}>
-        <div className="dialog-header">
-          <div>
-            <span className="eyebrow">Publish agent</span>
-            <h2>Upload to Atlas Hub</h2>
+    <section className="upload-page">
+      <div className="upload-page-inner">
+        <button className="upload-breadcrumb" type="button" onClick={onBack}>
+          <span>Atlas Hub</span>
+          <span aria-hidden="true">/</span>
+          <span>Upload</span>
+        </button>
+
+        <header className="upload-page-header">
+          <h1 className="upload-title">{renderAnimatedWords(uploadTitleWords, 0)}</h1>
+          <p className="upload-subtitle">{renderAnimatedWords(uploadSubtitleWords, 120)}</p>
+        </header>
+
+        <form className="upload-form" onSubmit={handleSubmit}>
+          <div
+            className={`drop-zone ${isDragActive ? "drop-zone--active" : ""} ${
+              file ? "drop-zone--selected" : ""
+            }`}
+            ref={dropZoneRef}
+          >
+            <input
+              accept=".md,.txt,.json,.yaml,.yml"
+              ref={fileInputRef}
+              type="file"
+              onChange={(event) => selectFile(event.target.files?.[0] || null)}
+            />
+            <div className="drop-zone-empty" aria-hidden={Boolean(file)}>
+              <Upload size={40} />
+              <strong>Drop your agent file here</strong>
+              <span>Supports .md, .txt, .json, .yaml</span>
+              <button className="ghost-btn" type="button" onClick={openFilePicker}>
+                or pick a file
+              </button>
+            </div>
+
+            <div className="drop-zone-file" aria-hidden={!file}>
+              <span className="upload-file-icon">
+                <FileCode2 size={18} />
+              </span>
+              <span className="upload-file-meta">
+                <strong>{file?.name}</strong>
+                <small>{file ? formatFileSize(file.size) : ""}</small>
+              </span>
+              <button className="icon-btn" type="button" onClick={clearFile} aria-label="Clear file">
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <button className="icon-btn" type="button" onClick={onClose} aria-label="Close upload">
-            <X size={18} />
-          </button>
-        </div>
 
-        <label className="file-drop">
-          <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-          <Upload size={22} />
-          <span>{file ? file.name : "Choose an agent file"}</span>
-        </label>
+          {file ? (
+            <UploadProgress
+              detailsDone={detailsDone}
+              file={file}
+              magicDone={magicState.status === "done"}
+              publishDone={publishDone}
+            />
+          ) : null}
 
-        <div className="field-grid">
-          <label>
-            <span>Title</span>
+          {file ? (
+            <div className="magic-panel upload-magic-panel">
+              <button
+                className={`magic-btn ${magicVisible ? "magic-btn-enter" : ""}`}
+                type="button"
+                disabled={magicState.status === "loading"}
+                onClick={handleMagic}
+              >
+                {magicState.status === "loading" ? (
+                  <Loader2 className="spin" size={16} />
+                ) : (
+                  <Sparkles size={16} />
+                )}
+                {magicState.status === "loading" ? "Reading file..." : "Magic"}
+              </button>
+              {magicState.status === "done" || magicState.status === "error" ? (
+                <p
+                  className={`magic-status ${magicState.status} ${
+                    magicVisible ? "magic-btn-enter" : ""
+                  }`}
+                >
+                  {magicState.message}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <FloatingField
+            active={Boolean(form.title)}
+            delay={200}
+            label="Title"
+          >
             <input
               value={form.title}
               onChange={(event) => updateField("title", event.target.value)}
-              placeholder="Code Review Assistant"
+              placeholder="Name your agent"
             />
-          </label>
-          <label>
-            <span>Model</span>
+          </FloatingField>
+
+          <FloatingField active delay={260} label="Category">
+            <select
+              value={form.category}
+              onChange={(event) => updateField("category", event.target.value)}
+            >
+              {Object.entries(categoryMeta)
+                .filter(([key]) => key !== "all")
+                .map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+            </select>
+          </FloatingField>
+
+          <FloatingField active={Boolean(form.model)} delay={320} label="Model">
             <input
               value={form.model}
               onChange={(event) => updateField("model", event.target.value)}
               placeholder="gpt-4o"
             />
-          </label>
-        </div>
+          </FloatingField>
 
-        <label>
-          <span>Category</span>
-          <select value={form.category} onChange={(event) => updateField("category", event.target.value)}>
-            {Object.entries(categoryMeta)
-              .filter(([key]) => key !== "all")
-              .map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-          </select>
-        </label>
+          <FloatingField
+            active={Boolean(form.userDescription)}
+            className="textarea-field"
+            counter={
+              <span
+                className={`char-counter ${
+                  form.userDescription.length >= descriptionLimit
+                    ? "limit"
+                    : form.userDescription.length >= 250
+                      ? "warning"
+                      : ""
+                }`}
+              >
+                {form.userDescription.length} / {descriptionLimit}
+              </span>
+            }
+            delay={380}
+            label="Description"
+          >
+            <textarea
+              maxLength={descriptionLimit}
+              value={form.userDescription}
+              onChange={(event) => updateField("userDescription", event.target.value)}
+              placeholder="Short summary shown in browse cards"
+            />
+          </FloatingField>
 
-        <label>
-          <span>Description</span>
-          <textarea
-            value={form.userDescription}
-            onChange={(event) => updateField("userDescription", event.target.value)}
-            placeholder="Short summary shown in browse cards"
-          />
-        </label>
+          <FloatingField
+            active={Boolean(form.userManual)}
+            className="textarea-field manual-field"
+            delay={440}
+            label="Manual"
+          >
+            <textarea
+              value={form.userManual}
+              onChange={(event) => updateField("userManual", event.target.value)}
+              placeholder="Setup notes, usage notes, and constraints"
+            />
+          </FloatingField>
 
-        <label>
-          <span>Manual</span>
-          <textarea
-            value={form.userManual}
-            onChange={(event) => updateField("userManual", event.target.value)}
-            placeholder="Setup notes, usage notes, and constraints"
-          />
-        </label>
+          <div className="visibility-toggle form-field-animate" style={{ "--field-delay": "500ms" }}>
+            <span>Private</span>
+            <button
+              aria-checked={form.isPublic}
+              className={form.isPublic ? "public-switch is-public" : "public-switch"}
+              role="switch"
+              type="button"
+              onClick={() => updateField("isPublic", !form.isPublic)}
+            >
+              <span />
+            </button>
+            <span>Public</span>
+          </div>
 
-        <label className="checkbox-row">
-          <input
-            checked={form.useAiGeneration}
-            onChange={(event) => updateField("useAiGeneration", event.target.checked)}
-            type="checkbox"
-          />
-          <span>Let backend generate missing description and manual</span>
-        </label>
-
-        {state.message ? <p className={`form-message ${state.status}`}>{state.message}</p> : null}
-
-        <div className="dialog-actions">
-          <button className="secondary-btn" type="button" onClick={onClose}>
-            Cancel
+          <button
+            className={`primary-btn publish-btn ${state.status === "success" ? "is-success" : ""} ${
+              state.status === "error" ? "is-error" : ""
+            }`}
+            disabled={!file || state.status === "loading" || state.status === "success"}
+            title={!file ? "Upload a file first" : undefined}
+            type="submit"
+          >
+            {state.status === "loading" ? (
+              <>
+                <Loader2 className="spin" size={17} />
+                Publishing...
+              </>
+            ) : state.status === "success" ? (
+              <>
+                <Check size={17} />
+                Published!
+              </>
+            ) : (
+              <>
+                <Send size={17} />
+                Publish agent
+              </>
+            )}
           </button>
-          <button className="primary-btn" disabled={state.status === "loading"} type="submit">
-            {state.status === "loading" ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
-            Publish
-          </button>
-        </div>
-      </form>
+
+          {state.status === "error" ? <p className="upload-error">{state.message}</p> : null}
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function FloatingField({ active, children, className = "", counter = null, delay, label }) {
+  return (
+    <label
+      className={`floating-field form-field-animate ${active ? "has-value" : ""} ${className}`}
+      style={{ "--field-delay": `${delay}ms` }}
+    >
+      {children}
+      <span className="floating-label">{label}</span>
+      {counter}
+    </label>
+  );
+}
+
+function UploadProgress({ detailsDone, file, magicDone, publishDone }) {
+  const steps = [
+    { label: "File", done: Boolean(file) },
+    { label: "Details", done: detailsDone },
+    { label: "Magic", done: magicDone },
+    { label: "Publish", done: publishDone },
+  ];
+  const activeIndex = steps.findIndex((step) => !step.done);
+  const resolvedActiveIndex = activeIndex === -1 ? steps.length - 1 : activeIndex;
+  let leadingCompleted = 0;
+
+  for (const step of steps) {
+    if (!step.done) break;
+    leadingCompleted += 1;
+  }
+
+  const fillPercent =
+    leadingCompleted <= 1 ? 0 : ((Math.min(leadingCompleted, steps.length) - 1) / (steps.length - 1)) * 100;
+
+  return (
+    <div className="upload-progress" style={{ "--progress-fill": `${fillPercent}%` }}>
+      <div className="progress-line" aria-hidden="true" />
+      {steps.map((step, index) => {
+        const status = step.done ? "completed" : index === resolvedActiveIndex ? "active" : "upcoming";
+        return (
+          <div className={`progress-step ${status}`} key={step.label}>
+            <span>{status === "completed" ? <Check size={13} /> : index + 1}</span>
+            <small>{step.label}</small>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+function renderAnimatedWords(words, baseDelay = 0) {
+  return words.map((word, index) => (
+    <span className="word-wrap" key={`${word}-${index}`}>
+      <span className="word" style={{ animationDelay: `${baseDelay + index * 38}ms` }}>
+        {word}
+      </span>
+    </span>
+  ));
 }
 
 function AgentDrawer({ agent, state, onClose }) {
