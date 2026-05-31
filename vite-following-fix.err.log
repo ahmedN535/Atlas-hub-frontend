@@ -1,0 +1,27 @@
+[2m11:43:40 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:43:44 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:44:49 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:44:50 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:44:54 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:49:24 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:57:22 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m11:57:22 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)
+[2m12:12:51 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mReview submit failed: Error: Backend Supabase auth is not configured.
+    at request (http://127.0.0.1:5173/src/api/agents.js:31:9)
+    at async submitReview (http://127.0.0.1:5173/src/App.jsx?t=1780263557160:3698:19)

@@ -1301,10 +1301,10 @@ export default function App() {
     }, screenTransitionMs + 20);
   }
 
-  function syncOrganizations(nextOrganizations) {
+  const syncOrganizations = useCallback((nextOrganizations) => {
     setOrganizations(nextOrganizations);
     setCurrentUser((prev) => ({ ...prev, organizations: nextOrganizations }));
-  }
+  }, []);
 
   function addUploadedAgent(agent) {
     setAgents((current) => [
@@ -4149,7 +4149,7 @@ function OrganizationsPage({
     const root = pageRef.current;
     if (!root) return undefined;
 
-    const cards = Array.from(root.querySelectorAll(".organization-card"));
+    const cards = Array.from(root.querySelectorAll(".organization-card.will-animate"));
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -4161,7 +4161,15 @@ function OrganizationsPage({
       { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
     );
 
-    cards.forEach((card) => observer.observe(card));
+    cards.forEach((card) => {
+      const rect = card.getBoundingClientRect();
+      const alreadyVisible = rect.top < window.innerHeight && rect.bottom > 0;
+      if (alreadyVisible) {
+        card.classList.add("did-animate");
+      } else {
+        observer.observe(card);
+      }
+    });
     return () => observer.disconnect();
   }, [orgs.length, loadState]);
 
@@ -4887,8 +4895,13 @@ function FollowingFeedPage({
   onFollow,
   onUnfollow,
 }) {
+  const pageRef = useRef(null);
   const [feedAgents, setFeedAgents] = useState([]);
   const [loadState, setLoadState] = useState("loading");
+  const visibleFeedAgents = useMemo(
+    () => feedAgents.filter((agent) => agent.visibility !== "private" || isAgentOwner(agent, devUserId)),
+    [devUserId, feedAgents],
+  );
 
   const loadFeed = useCallback(async () => {
     setLoadState("loading");
@@ -4905,6 +4918,35 @@ function FollowingFeedPage({
     if (currentUser.id === null) return;
     void loadFeed();
   }, [currentUser.id, devUserId, loadFeed]);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root || loadState !== "loaded") return undefined;
+
+    const animatedElements = Array.from(root.querySelectorAll(".following-card-list .agent-card"));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("did-animate");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+    );
+
+    animatedElements.forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      const alreadyVisible = rect.top < window.innerHeight && rect.bottom > 0;
+      if (alreadyVisible) {
+        element.classList.add("did-animate");
+      } else {
+        observer.observe(element);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [loadState, visibleFeedAgents.length]);
 
   if (currentUser.id === null) {
     return (
@@ -4927,7 +4969,7 @@ function FollowingFeedPage({
   }
 
   return (
-    <section className="following-feed-page">
+    <section className="following-feed-page" ref={pageRef}>
       <div className="following-feed-inner">
         <div className="agent-topbar">
           <nav className="agent-breadcrumb" aria-label="Breadcrumb">
@@ -4960,9 +5002,9 @@ function FollowingFeedPage({
               Retry
             </button>
           </div>
-        ) : feedAgents.length ? (
+        ) : visibleFeedAgents.length ? (
           <div className="following-card-list" role="list">
-            {feedAgents.map((agent, index) => (
+            {visibleFeedAgents.map((agent, index) => (
               <AgentCard
                 agent={agent}
                 devUserId={devUserId}
