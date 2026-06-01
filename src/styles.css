@@ -4674,37 +4674,6 @@ button.review-avatar:hover {
   text-decoration: underline;
 }
 
-.profile-stats-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin: 24px 0;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.profile-stat-block {
-  display: grid;
-  gap: 6px;
-  text-align: center;
-}
-
-.profile-stat-block strong {
-  color: var(--gold);
-  font-size: 22px;
-  font-weight: 600;
-}
-
-.profile-stat-block span {
-  color: var(--text3);
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .profile-section {
   margin-top: 28px;
 }
@@ -5211,10 +5180,6 @@ button.review-avatar:hover {
 
   .profile-identity-actions {
     width: 100%;
-  }
-
-  .profile-stats-bar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .profile-activity-item {

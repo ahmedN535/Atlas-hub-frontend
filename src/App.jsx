@@ -107,7 +107,6 @@ const defaultProfileSettings = {
   showWebsite: true,
   showOrganizations: true,
   showJoinDate: true,
-  showStats: true,
   showActivity: true,
 };
 
@@ -2791,6 +2790,7 @@ function AgentCard({
   style = undefined,
   devUserId = null,
   followedUsers = new Set(),
+  showMatchScore = true,
   onFollow,
   onUnfollow,
   onToast,
@@ -2864,12 +2864,12 @@ function AgentCard({
         <span className="agent-icon">
           <FileCode2 size={19} />
         </span>
-        {hasSimilarity ? (
+        {showMatchScore && hasSimilarity ? (
           <span className="mini-badge match-badge">
             <Search size={12} />
             {matchPercent}% match
           </span>
-        ) : agent.featured ? (
+        ) : showMatchScore && agent.featured ? (
           <span className="mini-badge">
             <Star size={12} />
             Featured
@@ -5816,10 +5816,6 @@ function ProfilePage({
             ) : null}
           </div>
 
-          {settings.showStats ? (
-            <ProfileStatsBar stats={user.stats} />
-          ) : null}
-
           {settings.showOrganizations && user.organizations?.length ? (
             <section className="profile-section profile-reveal will-animate">
               <h2>Organizations</h2>
@@ -5853,6 +5849,7 @@ function ProfilePage({
                     followedUsers={followedUsers}
                     index={index}
                     className="profile-agent-card will-animate"
+                    showMatchScore={false}
                     onFollow={onFollow}
                     onOpen={() => onNavigateToAgent(agent)}
                     onToast={onToast}
@@ -5928,29 +5925,6 @@ function ProfilePage({
   );
 }
 
-function ProfileStatsBar({ stats }) {
-  const barRef = useRef(null);
-  const items = [
-    ["Agents", stats?.agents ?? 0],
-    ["Downloads", stats?.downloads ?? 0],
-    ["Endorsements", stats?.endorsements ?? 0],
-    ["Collections", stats?.collections ?? 0],
-  ];
-
-  return (
-    <div className="profile-stats-bar profile-reveal will-animate" ref={barRef}>
-      {items.map(([label, value]) => (
-        <div className="profile-stat-block" key={label}>
-          <strong>
-            <CountValue value={value} />
-          </strong>
-          <span>{label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ProfileEditPanel({ open, user, onClose, onSave, onUpdateUser }) {
   const [draft, setDraft] = useState({
     name: user.name,
@@ -5994,7 +5968,6 @@ function ProfileEditPanel({ open, user, onClose, onSave, onUpdateUser }) {
     ["showWebsite", "Show website"],
     ["showOrganizations", "Show organizations"],
     ["showJoinDate", "Show join date"],
-    ["showStats", "Show stats"],
     ["showActivity", "Show activity"],
   ];
 
