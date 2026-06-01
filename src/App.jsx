@@ -81,11 +81,11 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 });
 
 const modelOptions = ["all", "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"];
-const DEMO_USERNAMES = ["ada", "grace", "alan"];
+const DEMO_USERNAMES = ["ada", "bob", "catherine"];
 const DEV_USER_FALLBACKS = [
   { id: 1, name: "Ada", initials: "A" },
-  { id: 2, name: "Grace", initials: "G" },
-  { id: 3, name: "Alan", initials: "AL" },
+  { id: 2, name: "Bob", initials: "B" },
+  { id: 3, name: "Catherine", initials: "C" },
 ];
 const visibilityOptions = [
   { value: "public", label: "Public", description: "Visible to everyone" },
@@ -277,6 +277,12 @@ function normalizeUser(user, fallback = {}) {
   const source = user?.user || user?.profile || user?.data || user;
   const displayName = getUserDisplayName(source) || fallback.name || "Atlas user";
   const username = getUserUsername(source) || String(fallback.name || displayName).toLowerCase();
+  const followerCount = Number(
+    source?.follower_count ?? source?.followerCount ?? fallback.follower_count ?? fallback.followerCount ?? 0,
+  );
+  const followingCount = Number(
+    source?.following_count ?? source?.followingCount ?? fallback.following_count ?? fallback.followingCount ?? 0,
+  );
 
   return {
     id: source?.id ?? fallback.id ?? null,
@@ -294,7 +300,16 @@ function normalizeUser(user, fallback = {}) {
     joinedAt: source?.created_at || source?.createdAt || fallback.joinedAt || null,
     role: source?.role || fallback.role || "Contributor",
     organizations: fallback.organizations || [],
-    stats: fallback.stats || createDefaultCurrentUser().stats,
+    follower_count: Number.isFinite(followerCount) ? followerCount : 0,
+    following_count: Number.isFinite(followingCount) ? followingCount : 0,
+    is_following: Boolean(
+      source?.is_following ?? source?.isFollowing ?? fallback.is_following ?? fallback.isFollowing ?? false,
+    ),
+    stats: {
+      ...(fallback.stats || createDefaultCurrentUser().stats),
+      followers: Number.isFinite(followerCount) ? followerCount : 0,
+      following: Number.isFinite(followingCount) ? followingCount : 0,
+    },
     settings: { ...defaultProfileSettings, ...(source?.settings || fallback.settings || {}) },
     initials: getProfileInitials(displayName),
     raw: source || null,
@@ -375,10 +390,8 @@ function isAgentOwner(agent, userId) {
 }
 
 function canDisplayAgentForViewer(agent, viewerId) {
-  if (agent?.visibility !== "group_only") return true;
-  if (isAgentOwner(agent, viewerId)) return true;
-  if (agent.visibleForUserId == null) return true;
-  return viewerId != null && String(agent.visibleForUserId) === String(viewerId);
+  void viewerId;
+  return Boolean(agent);
 }
 
 function getOrgInitials(name) {
@@ -448,6 +461,13 @@ function extractAgentList(data) {
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.results)) return data.results;
   return [];
+}
+
+function extractFollowedUserIds(data) {
+  return extractUserList(data)
+    .map((item) => item.followed_id ?? item.following_id ?? item.user_id ?? item.id)
+    .filter((id) => id != null)
+    .map((id) => String(id));
 }
 
 function normalizeAgent(agent, context = {}) {
@@ -986,7 +1006,7 @@ export default function App() {
   const [category, setCategory] = useState("all");
   const [model, setModel] = useState("all");
   const [sortBy, setSortBy] = useState("recommended");
-  const [publicOnly, setPublicOnly] = useState(true);
+  const [publicOnly, setPublicOnly] = useState(false);
   const [searchState, setSearchState] = useState({ status: "idle", results: null, message: "" });
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
@@ -1001,10 +1021,13 @@ export default function App() {
   );
   const [demoUsersState, setDemoUsersState] = useState({ status: "idle", message: "" });
   const [followedUsers, setFollowedUsers] = useState(() => new Set());
+  const [agentRefreshKey, setAgentRefreshKey] = useState(0);
+  const [followingFeedRefreshKey, setFollowingFeedRefreshKey] = useState(0);
   const [landingQuery, setLandingQuery] = useState("");
   const [toast, setToast] = useState({ message: "", visible: false });
 
   const isOwnProfile = profileUser?.id === currentUser?.id;
+  const activeUserId = currentUser.id ?? devUserId ?? null;
   const authLoadingActive = authLoading && !authStuck;
 
   useEffect(() => {
@@ -1054,15 +1077,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setCurrentUserId(devUserId);
+    setCurrentUserId(activeUserId);
+  }, [activeUserId]);
 
+  useEffect(() => {
     if (!import.meta.env.DEV) return;
-
     const devUser =
       demoUsers.find((user) => String(user.id) === String(devUserId)) ||
       normalizeUser(null, getDevFallbackUser(devUserId));
 
-    setCurrentUserId(devUser.id);
     setCurrentUser({
       ...devUser,
       settings: { ...defaultProfileSettings, ...(devUser.settings || {}) },
@@ -1102,6 +1125,31 @@ export default function App() {
     setAuthTokenGetter(getAccessToken);
     return () => setAuthTokenGetter(null);
   }, [getAccessToken]);
+
+  useEffect(() => {
+    if (activeUserId == null) {
+      setFollowedUsers(new Set());
+      return undefined;
+    }
+
+    let ignore = false;
+
+    async function loadFollowedUsers() {
+      try {
+        const data = await getUserFollowing(activeUserId);
+        if (ignore) return;
+        setFollowedUsers(new Set(extractFollowedUserIds(data)));
+      } catch {
+        if (!ignore) setFollowedUsers(new Set());
+      }
+    }
+
+    loadFollowedUsers();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeUserId]);
 
   useEffect(() => {
     if (currentUser.id == null) {
@@ -1293,6 +1341,50 @@ export default function App() {
   const profileViewUser = isOwnProfile ? currentUser : profileUser;
 
   useEffect(() => {
+    if (screen !== "profile" || !profileUser?.id) return undefined;
+
+    let ignore = false;
+    const requestId = profileRequestRef.current + 1;
+    profileRequestRef.current = requestId;
+    const viewedUserId = profileUser.id;
+
+    async function refreshViewedProfile() {
+      try {
+        const fresh = normalizeUser(await getUser(viewedUserId), profileUser);
+        if (ignore || profileRequestRef.current !== requestId) return;
+        setProfileUser((viewing) =>
+          viewing?.id != null && String(viewing.id) === String(fresh.id)
+            ? { ...viewing, ...fresh, organizations: viewing.organizations || fresh.organizations }
+            : viewing,
+        );
+        setFollowedUsers((current) => {
+          const next = new Set(current);
+          if (fresh.is_following) {
+            next.add(String(fresh.id));
+          } else {
+            next.delete(String(fresh.id));
+          }
+          return next;
+        });
+        if (String(fresh.id) === String(currentUser.id)) {
+          setCurrentUser((current) => ({ ...current, ...fresh }));
+        }
+        setDemoUsers((users) =>
+          users.map((item) => (String(item.id) === String(fresh.id) ? { ...item, ...fresh } : item)),
+        );
+      } catch {
+        // Keep the existing profile data if the refresh fails.
+      }
+    }
+
+    refreshViewedProfile();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeUserId, profileUser?.id, screen]);
+
+  useEffect(() => {
     if (screen !== "profile" || !profileViewUser?.id) {
       setProfileActivity([]);
       setProfileActivityState({ status: "idle", message: "" });
@@ -1390,7 +1482,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, [currentUser.id, devUserId]);
+  }, [agentRefreshKey, currentUser.id, devUserId]);
 
   useEffect(() => {
     const cleanQuery = query.trim();
@@ -1453,7 +1545,6 @@ export default function App() {
     const base = hasBackendRankedResults ? searchState.results : localSearch(agents, query);
     const filtered = base.filter((agent) => {
       if (!canDisplayAgentForViewer(agent, currentUser.id ?? devUserId)) return false;
-      if (agent.visibility === "private" && !isAgentOwner(agent, currentUser.id ?? devUserId)) return false;
       if (category !== "all" && agent.category !== category) return false;
       if (model !== "all" && agent.model !== model) return false;
       if (publicOnly && agent.visibility !== "public") return false;
@@ -1762,8 +1853,25 @@ export default function App() {
     setFollowedUsers((current) => new Set(current).add(key));
 
     try {
-      await followUser(userId);
+      const data = await followUser(userId);
+      setProfileUser((viewing) =>
+        viewing?.id != null && String(viewing.id) === key
+          ? { ...viewing, ...normalizeUser({ id: userId, ...data }, viewing), id: viewing.id, is_following: true }
+          : viewing,
+      );
+      setDemoUsers((users) =>
+        users.map((item) =>
+          String(item.id) === key
+            ? { ...item, ...normalizeUser({ id: userId, ...data }, item), id: item.id, is_following: true }
+            : item,
+        ),
+      );
+      if (screenRef.current === "following") {
+        setFollowingFeedRefreshKey((current) => current + 1);
+      }
+      setAgentRefreshKey((current) => current + 1);
       showToast("Following user.");
+      return data;
     } catch (error) {
       setFollowedUsers((current) => {
         const next = new Set(current);
@@ -1785,8 +1893,25 @@ export default function App() {
     });
 
     try {
-      await unfollowUser(userId);
+      const data = await unfollowUser(userId);
+      setProfileUser((viewing) =>
+        viewing?.id != null && String(viewing.id) === key
+          ? { ...viewing, ...normalizeUser({ id: userId, ...data }, viewing), id: viewing.id, is_following: false }
+          : viewing,
+      );
+      setDemoUsers((users) =>
+        users.map((item) =>
+          String(item.id) === key
+            ? { ...item, ...normalizeUser({ id: userId, ...data }, item), id: item.id, is_following: false }
+            : item,
+        ),
+      );
+      if (screenRef.current === "following") {
+        setFollowingFeedRefreshKey((current) => current + 1);
+      }
+      setAgentRefreshKey((current) => current + 1);
       showToast("Unfollowed user.");
+      return data;
     } catch (error) {
       setFollowedUsers((current) => new Set(current).add(key));
       showToast(error?.message || "Could not unfollow user.");
@@ -1880,6 +2005,7 @@ export default function App() {
               currentUser={currentUser}
               devUserId={devUserId}
               followedUsers={followedUsers}
+              refreshKey={followingFeedRefreshKey}
               onBack={() => navigate("browse")}
               onBrowse={() => navigate("browse")}
               onFollow={handleFollowUser}
@@ -3102,8 +3228,6 @@ function AgentCard({
   const hasReviews = reviewCount > 0 && Number.isFinite(averageRating) && averageRating > 0;
   const owner = isAgentOwner(agent, devUserId);
   const canFollow = agent.uploader_id != null && !owner;
-
-  if (agent.visibility === "private" && !owner) return null;
 
   const handleMouseMove = useCallback((event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -5028,11 +5152,11 @@ function OrgDetailPage({
     } catch {
       setLoadState("error");
     }
-  }, [org.id]);
+  }, [currentUser.id, devUserId, org.id]);
 
   useEffect(() => {
     void loadOrg();
-  }, [devUserId, loadOrg]);
+  }, [loadOrg]);
 
   const loadGroups = useCallback(async () => {
     setGroupsState("loading");
@@ -5721,6 +5845,7 @@ function FollowingFeedPage({
   currentUser,
   devUserId,
   followedUsers,
+  refreshKey = 0,
   onNavigateToAgent,
   onToast,
   onBack,
@@ -5734,9 +5859,7 @@ function FollowingFeedPage({
   const visibleFeedAgents = useMemo(
     () =>
       feedAgents.filter(
-        (agent) =>
-          canDisplayAgentForViewer(agent, currentUser.id ?? devUserId) &&
-          (agent.visibility !== "private" || isAgentOwner(agent, currentUser.id ?? devUserId)),
+        (agent) => canDisplayAgentForViewer(agent, currentUser.id ?? devUserId),
       ),
     [currentUser.id, devUserId, feedAgents],
   );
@@ -5759,7 +5882,7 @@ function FollowingFeedPage({
   useEffect(() => {
     if (currentUser.id === null) return;
     void loadFeed();
-  }, [currentUser.id, devUserId, loadFeed]);
+  }, [currentUser.id, devUserId, loadFeed, refreshKey]);
 
   useEffect(() => {
     const root = pageRef.current;
@@ -5864,7 +5987,7 @@ function FollowingFeedPage({
           <div className="empty-state following-empty-state">
             <Users className="empty-state-icon" size={32} />
             <h3>Nothing here yet</h3>
-            <p>Follow some users to see their agents here.</p>
+            <p>No visible agents from followed users yet.</p>
             <button className="primary-btn" type="button" onClick={onBrowse}>
               Browse agents
             </button>
@@ -5987,7 +6110,8 @@ function ProfilePage({
   const bannerInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [following, setFollowing] = useState(false);
+  const [followPending, setFollowPending] = useState(false);
+  const isFollowing = Boolean(user.is_following || followedUsers?.has(String(user.id)));
 
   const publishedAgents = useMemo(
     () =>
@@ -6001,7 +6125,7 @@ function ProfilePage({
 
   useEffect(() => {
     setEditOpen(false);
-    setFollowing(false);
+    setFollowPending(false);
   }, [user.id]);
 
   useEffect(() => {
@@ -6043,10 +6167,20 @@ function ProfilePage({
     reader.readAsDataURL(file);
   }
 
-  function handleFollow() {
-    if (following) return;
-    setFollowing(true);
-    onToast(`Following ${user.name}`);
+  async function handleFollow() {
+    if (followPending || user.id == null) return;
+    setFollowPending(true);
+    try {
+      if (isFollowing) {
+        await onUnfollow?.(user.id);
+      } else {
+        await onFollow?.(user.id);
+      }
+    } catch {
+      // The parent restores optimistic state and shows the failure toast.
+    } finally {
+      setFollowPending(false);
+    }
   }
 
   const settings = user.settings || defaultProfileSettings;
@@ -6162,11 +6296,13 @@ function ProfilePage({
               ) : (
                 <>
                   <button
-                    className={following ? "secondary-btn profile-follow-btn is-following" : "primary-btn compact profile-follow-btn"}
+                    className={isFollowing ? "secondary-btn profile-follow-btn is-following" : "primary-btn compact profile-follow-btn"}
+                    disabled={followPending}
                     type="button"
                     onClick={handleFollow}
                   >
-                    {following ? "Following" : "+ Follow"}
+                    {followPending ? <Loader2 className="spin" size={14} /> : null}
+                    {isFollowing ? "Following" : "+ Follow"}
                   </button>
                   <button
                     className="ghost-btn profile-more-btn"
