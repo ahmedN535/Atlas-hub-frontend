@@ -42,6 +42,50 @@ async function request(path, options = {}) {
   return data;
 }
 
+function getFilenameFromContentDisposition(header) {
+  if (!header) return "";
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return utf8Match[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+
+  const match = header.match(/filename="?([^";]+)"?/i);
+  return match?.[1]?.trim() || "";
+}
+
+export async function downloadAgentFile(agentId) {
+  const token = authTokenGetter ? await authTokenGetter() : null;
+  const headers = {
+    ...(_currentUserId ? { "x-user-id": String(_currentUserId) } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/download`, { headers });
+
+  if (!response.ok) {
+    let message = `Request failed with ${response.status}`;
+    try {
+      const data = await response.json();
+      message = data?.details || data?.error || message;
+    } catch {
+      // Keep the status-based message when the response body is not JSON.
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const filename =
+    getFilenameFromContentDisposition(response.headers.get("content-disposition")) ||
+    `agent-${agentId}.txt`;
+
+  return { blob, filename };
+}
+
 export function getAgents() {
   return request("/api/agents");
 }
@@ -155,6 +199,28 @@ export function addOrgMember(orgId, userId, role = "member") {
     method: "POST",
     body: JSON.stringify({ user_id: userId, role }),
   });
+}
+
+export function getOrganizationGroups(orgId) {
+  return request(`/api/organizations/${orgId}/groups`);
+}
+
+export function createOrganizationGroup(orgId, payload) {
+  return request(`/api/organizations/${orgId}/groups`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function addGroupMember(groupId, userId, role = "member") {
+  return request(`/api/groups/${groupId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+}
+
+export function getUserActivity(userId) {
+  return request(`/api/users/${userId}/activity`);
 }
 
 export function updateOrgMemberRole(orgId, userId, role) {

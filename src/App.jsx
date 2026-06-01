@@ -8,14 +8,12 @@ import {
   Camera,
   Check,
   ChevronDown,
-  Cloud,
   Database,
   Download,
   ExternalLink,
   FileCode2,
   Folder,
   Globe,
-  Info,
   Layers3,
   LayoutGrid,
   List,
@@ -43,6 +41,10 @@ import { categoryMeta } from "./data/mockAgents.js";
 import {
   analyzeAgent,
   addOrgMember,
+  addGroupMember,
+  downloadAgentFile,
+  getOrganizationGroups,
+  createOrganizationGroup,
   createOrganization,
   deleteAgent,
   followUser,
@@ -50,12 +52,12 @@ import {
   getAgent,
   getAgents,
   getAgentReviews,
-  getApiBaseLabel,
   getMyAgents,
   getMyOrganizations,
   getOrganization,
   getUserFollowers,
   getUserFollowing,
+  getUserActivity,
   publishAgent,
   saveAgentReview,
   searchAgents,
@@ -90,6 +92,7 @@ const visibilityOptions = [
   },
   { value: "private", label: "Private", description: "Only you can see this" },
   { value: "org_only", label: "Org only", description: "Only members of the organization can see this" },
+  { value: "group_only", label: "Group only", description: "Only members of the selected group can see this" },
 ];
 const screenTransitionMs = 260;
 const heroTitleWords = "The agent registry for reusable AI agents".split(" ");
@@ -99,8 +102,6 @@ const uploadSubtitleWords =
     " ",
   );
 const descriptionLimit = 300;
-const semanticMatchThreshold = 0.6;
-const semanticMatchThresholdLabel = `${Math.round(semanticMatchThreshold * 100)}%`;
 const defaultProfileSettings = {
   showLocation: true,
   showWebsite: true,
@@ -172,6 +173,8 @@ const profileActivityIcons = {
   Folder,
   Users,
 };
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const uploadMetadataFields = [
   "toolsIntegrations",
   "prerequisites",
@@ -319,6 +322,7 @@ function slugFromName(name) {
 function extractAgentList(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.agents)) return data.agents;
+  if (Array.isArray(data?.groups)) return data.groups;
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.results)) return data.results;
   return [];
@@ -336,6 +340,11 @@ function normalizeAgent(agent) {
     file_name: agent.file_name || agent.fileName || "agent.md",
     visibility,
     org_id: agent.org_id ?? agent.orgId ?? null,
+    orgId: agent.orgId ?? agent.org_id ?? null,
+    orgName: agent.orgName ?? agent.org_name ?? agent.organization_name ?? "",
+    group_id: agent.group_id ?? agent.groupId ?? null,
+    groupId: agent.groupId ?? agent.group_id ?? null,
+    groupName: agent.groupName ?? agent.group_name ?? "",
     is_public: agent.is_public ?? agent.isPublic ?? visibility === "public",
     created_at: agent.created_at || new Date().toISOString(),
     team: agent.team || agent.uploader_name || agent.uploaderName || agent.user_name || "Atlas contributor",
@@ -343,15 +352,129 @@ function normalizeAgent(agent) {
     endorsements: Number(agent.endorsements ?? agent.review_count ?? 0),
     downloads: Number(agent.downloads ?? 0),
     featured: Boolean(agent.featured ?? false),
-    similarity: agent.similarity,
+    similarity: Number(agent.similarity ?? 0),
+    rankingScore: Number(agent.ranking_score ?? agent.rankingScore ?? 0),
+    averageRating: Number(agent.average_rating ?? agent.averageRating ?? 0),
+    reviewCount: Number(agent.review_count ?? agent.reviewCount ?? 0),
     indexed_text: agent.indexed_text,
     embedding_model: agent.embedding_model,
+    toolsIntegrations: toDisplayList(agent.toolsIntegrations ?? agent.tools_integrations),
+    prerequisites: toDisplayList(agent.prerequisites),
+    inputFormat: toDisplayList(agent.inputFormat ?? agent.input_format),
+    outputFormat: toDisplayList(agent.outputFormat ?? agent.output_format),
+    useCases: toDisplayList(agent.useCases ?? agent.use_cases),
+    examplePrompts: toDisplayList(agent.examplePrompts ?? agent.example_prompts),
+    limitations: toDisplayList(agent.limitations),
+    whenToUse: toDisplayList(agent.whenToUse ?? agent.when_to_use),
+    whenNotToUse: toDisplayList(agent.whenNotToUse ?? agent.when_not_to_use),
+    setupInstructions: toDisplayList(agent.setupInstructions ?? agent.setup_instructions),
+    expectedUsers: toDisplayList(agent.expectedUsers ?? agent.expected_users),
+    tags: toDisplayList(agent.tags),
     media: Array.isArray(agent.media) ? agent.media : [],
   };
 }
 
+function normalizeGroup(group) {
+  return {
+    id: group.id,
+    name: group.name || group.group_name || "Untitled group",
+    description: group.description || "",
+    member_count: Number(group.member_count ?? group.members?.length ?? 0),
+    created_at: group.created_at || group.createdAt || "",
+  };
+}
+
+function formatRelativeTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const divisions = [
+    ["year", 60 * 60 * 24 * 365],
+    ["month", 60 * 60 * 24 * 30],
+    ["week", 60 * 60 * 24 * 7],
+    ["day", 60 * 60 * 24],
+    ["hour", 60 * 60],
+    ["minute", 60],
+  ];
+
+  for (const [unit, amount] of divisions) {
+    if (Math.abs(seconds) >= amount || unit === "minute") {
+      return relativeTimeFormatter.format(Math.round(seconds / amount), unit);
+    }
+  }
+
+  return "Just now";
+}
+
+function normalizeProfileActivityItem(item) {
+  const rawType = String(item.type || item.activity_type || item.action || "").toLowerCase();
+  const agentName =
+    item.agent?.name ||
+    item.agent_name ||
+    item.agent_title ||
+    item.agentName ||
+    item.title ||
+    item.name ||
+    "an agent";
+  const createdAt =
+    item.created_at ||
+    item.createdAt ||
+    item.review_created_at ||
+    item.comment_created_at ||
+    item.timestamp;
+
+  if (
+    rawType.includes("review") ||
+    rawType.includes("comment") ||
+    item.rating != null ||
+    item.review_id != null ||
+    item.comment_id != null
+  ) {
+    const rating = item.rating != null ? ` (${item.rating}/5)` : "";
+    return {
+      type: "review",
+      icon: "ThumbsUp",
+      color: "rgba(201,168,76,0.1)",
+      text: `Reviewed ${agentName}${rating}`,
+      time: formatRelativeTime(createdAt),
+    };
+  }
+
+  if (rawType.includes("upload") || rawType.includes("publish") || item.agent_id != null) {
+    return {
+      type: "upload",
+      icon: "Upload",
+      color: "rgba(74,222,128,0.1)",
+      text: `Published ${agentName}`,
+      time: formatRelativeTime(createdAt),
+    };
+  }
+
+  return {
+    type: rawType || "activity",
+    icon: "Users",
+    color: "rgba(96,165,250,0.1)",
+    text: item.text || item.message || item.summary || titleCase(rawType || "activity"),
+    time: formatRelativeTime(createdAt),
+  };
+}
+
+function normalizeProfileActivity(data) {
+  const items = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.activity)
+      ? data.activity
+      : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.results)
+          ? data.results
+          : [];
+
+  return items.map(normalizeProfileActivityItem);
+}
+
 function getMatchScore(agent) {
-  const similarity = Number(agent?.similarity);
+  const similarity = Number(agent.similarity ?? 0);
   if (!Number.isFinite(similarity)) return 0;
   return Math.max(0, Math.min(1, similarity));
 }
@@ -727,6 +850,8 @@ export default function App() {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [organizations, setOrganizations] = useState([]);
   const [profileUser, setProfileUser] = useState(null);
+  const [profileActivity, setProfileActivity] = useState([]);
+  const [profileActivityState, setProfileActivityState] = useState({ status: "idle", message: "" });
   const [currentUser, setCurrentUser] = useState(createDefaultCurrentUser);
   const [devUserId, setDevUserId] = useState(1);
   const [followedUsers, setFollowedUsers] = useState(() => new Set());
@@ -985,6 +1110,41 @@ export default function App() {
     }
   }, [changeScreen, profileUser, screen]);
 
+  const profileViewUser = isOwnProfile ? currentUser : profileUser;
+
+  useEffect(() => {
+    if (screen !== "profile" || !profileViewUser?.id) {
+      setProfileActivity([]);
+      setProfileActivityState({ status: "idle", message: "" });
+      return undefined;
+    }
+
+    let ignore = false;
+    setProfileActivityState({ status: "loading", message: "" });
+
+    async function loadProfileActivity() {
+      try {
+        const data = await getUserActivity(profileViewUser.id);
+        if (ignore) return;
+        setProfileActivity(normalizeProfileActivity(data));
+        setProfileActivityState({ status: "loaded", message: "" });
+      } catch (error) {
+        if (ignore) return;
+        setProfileActivity([]);
+        setProfileActivityState({
+          status: "error",
+          message: error.message || "Could not load recent activity.",
+        });
+      }
+    }
+
+    loadProfileActivity();
+
+    return () => {
+      ignore = true;
+    };
+  }, [profileViewUser?.id, screen]);
+
   useEffect(() => {
     if (screen === "org-detail" && !selectedOrg) {
       changeScreen("organizations");
@@ -1032,7 +1192,7 @@ export default function App() {
         const data = await getAgents();
         if (ignore) return;
         setAgents((Array.isArray(data) ? data : []).map(normalizeAgent));
-        setApiState({ status: "live", message: `Live backend: ${getApiBaseLabel()}` });
+        setApiState({ status: "live", message: "" });
       } catch (error) {
         if (ignore) return;
         setAgents([]);
@@ -1074,23 +1234,13 @@ export default function App() {
       try {
         const data = await searchAgents(cleanQuery);
         const results = Array.isArray(data?.results) ? data.results.map(normalizeAgent) : [];
-        const strongResults = results.filter(
-          (agent) => getMatchScore(agent) >= semanticMatchThreshold,
-        );
-        const lowConfidence = results.length > 0 && strongResults.length === 0;
-        const displayedResults = lowConfidence ? results : strongResults;
-        const omittedCount = Math.max(0, results.length - displayedResults.length);
         setSearchState({
           status: "live",
-          results: displayedResults,
-          lowConfidence,
-          omittedCount,
+          results,
+          lowConfidence: false,
+          omittedCount: 0,
           totalResults: results.length,
-          message: lowConfidence
-            ? `No strong matches above ${semanticMatchThresholdLabel}. Showing closest results.`
-            : omittedCount
-              ? `Showing matches above ${semanticMatchThresholdLabel}. ${omittedCount} lower-confidence hidden.`
-              : "Semantic search results",
+          message: "",
         });
       } catch (error) {
         setSearchState({
@@ -1123,7 +1273,7 @@ export default function App() {
       return true;
     });
 
-    if (hasBackendRankedResults && sortBy === "recommended") {
+    if (hasBackendRankedResults) {
       return filtered;
     }
 
@@ -1137,8 +1287,8 @@ export default function App() {
   }, [agents, category, devUserId, model, publicOnly, query, searchState.results, sortBy]);
 
   const shelves = useMemo(
-    () => buildShelves(filteredAgents, Array.isArray(searchState.results), searchState.lowConfidence),
-    [filteredAgents, searchState.results, searchState.lowConfidence],
+    () => buildShelves(filteredAgents, Array.isArray(searchState.results)),
+    [filteredAgents, searchState.results],
   );
 
   function openAuthModal(mode = "sign-in") {
@@ -1386,8 +1536,6 @@ export default function App() {
     }
   }
 
-  const profileViewUser = isOwnProfile ? currentUser : profileUser;
-
   return (
     <>
       <div className="custom-cursor custom-cursor-ring" aria-hidden="true" />
@@ -1492,11 +1640,16 @@ export default function App() {
               user={profileViewUser}
               isOwnProfile={isOwnProfile}
               allAgents={agents}
-              activity={profileActivitySeed}
+              activity={profileActivity}
+              activityState={profileActivityState}
+              devUserId={devUserId}
+              followedUsers={followedUsers}
               onBack={closeProfile}
+              onFollow={handleFollowUser}
               onNavigateToAgent={openAgent}
               onUpload={goToUpload}
               onSignIn={() => openAuthModal("sign-in")}
+              onUnfollow={handleUnfollowUser}
               onUpdateUser={updateCurrentUser}
               onToast={showToast}
             />
@@ -1796,14 +1949,6 @@ function Nav({
         >
           Browse
         </button>
-        <span className={`connection-pill ${apiState.status}`}>
-          <Cloud size={14} />
-          {apiState.status === "live"
-            ? "Backend live"
-            : apiState.status === "loading"
-              ? "Connecting"
-              : "Backend error"}
-        </span>
         {authLoading ? (
           <button className="ghost-btn nav-signin-btn" type="button" disabled>
             <Loader2 className="spin" size={14} />
@@ -2371,33 +2516,8 @@ function Browse({
       </div>
 
       <div className="browse-status-row">
-        <span className={`info-pill ${apiState.status}`}>
-          <Database size={14} />
-          {apiState.message}
-        </span>
-        {searchState.message ? (
-          <span className={`info-pill ${searchState.status}`}>
-            <Search size={14} />
-            {searchState.message}
-          </span>
-        ) : null}
         <span className="result-count">{totalAgentCount} agents</span>
       </div>
-
-      {searchState.lowConfidence ? (
-        <div className="match-quality-callout">
-          <span className="match-quality-icon">
-            <Search size={18} />
-          </span>
-          <span>
-            <strong>No high-confidence match found</strong>
-            <small>
-              We could not find anything above {semanticMatchThresholdLabel}, but these are the
-              closest backend-ranked agents and may still be useful.
-            </small>
-          </span>
-        </div>
-      ) : null}
 
       {apiState.status === "loading" ? (
         <BrowseLoadingShelf />
@@ -2405,7 +2525,7 @@ function Browse({
         <div className="empty-state error-state">
           <Database className="empty-state-icon" size={32} />
           <h3>Unable to load agents</h3>
-          <p>{apiState.message}</p>
+          <p>Please try again in a moment.</p>
         </div>
       ) : shelves.length ? (
         <div className="shelf-stack">
@@ -2679,6 +2799,9 @@ function AgentCard({
   const similarity = Number(agent.similarity);
   const hasSimilarity = Number.isFinite(similarity);
   const matchPercent = Math.round(getMatchScore(agent) * 100);
+  const averageRating = Number(agent.averageRating ?? 0);
+  const reviewCount = Number(agent.reviewCount ?? 0);
+  const hasReviews = reviewCount > 0 && Number.isFinite(averageRating) && averageRating > 0;
   const owner = isAgentOwner(agent, devUserId);
   const canFollow = agent.uploader_id != null && !owner;
 
@@ -2752,6 +2875,10 @@ function AgentCard({
             Featured
           </span>
         ) : null}
+        <span className="mini-badge rating-badge">
+          <Star size={12} />
+          {hasReviews ? `${averageRating.toFixed(1)} (${reviewCount})` : "No ratings"}
+        </span>
       </span>
       <span className="agent-card-title-line">
         <strong>{agent.name}</strong>
@@ -2915,13 +3042,29 @@ function AgentPage({
   const activeMedia = mediaItems[activeMediaIndex] || mediaItems[0];
   const reviewSummary = useMemo(() => getReviewSummary(reviews), [reviews]);
   const sortedReviews = useMemo(() => sortReviews(reviews, reviewSort), [reviewSort, reviews]);
+  const organizationLabel = agent.orgName || agent.org_id || agent.orgId || "";
+  const groupLabel = agent.groupName || agent.group_id || agent.groupId || "";
   const metadataRows = [
     ["File", agent.file_name],
     ["Model", agent.model],
     ["Visibility", getVisibilityLabel(agent.visibility)],
+    ["Organization", organizationLabel],
+    ["Group", groupLabel],
     ["Category", getCategoryLabel(agent.category)],
     ["Uploaded", formatDate(agent.created_at)],
-    agent.embedding_model ? ["Embedding model", agent.embedding_model] : null,
+    ["Embedding model", agent.embedding_model],
+    ["Tools / integrations", agent.toolsIntegrations],
+    ["Prerequisites", agent.prerequisites],
+    ["Input format", agent.inputFormat],
+    ["Output format", agent.outputFormat],
+    ["Use cases", agent.useCases],
+    ["Example prompts", agent.examplePrompts],
+    ["Limitations", agent.limitations],
+    ["When to use", agent.whenToUse],
+    ["When not to use", agent.whenNotToUse],
+    ["Setup instructions", agent.setupInstructions],
+    ["Expected users", agent.expectedUsers],
+    ["Tags", agent.tags],
   ].filter(Boolean);
 
   function selectMedia(index) {
@@ -2935,9 +3078,25 @@ function AgentPage({
     }, 120);
   }
 
-  function handleDownload() {
-    setDownloadCount((current) => current + 1);
-    onToast("Download started.");
+  async function handleDownload() {
+    try {
+      const { blob, filename } = await downloadAgentFile(agent.id);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename || `agent-${agent.id}.txt`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      setDownloadCount((current) => current + 1);
+      onToast("Download started.");
+    } catch (error) {
+      const message = error.message && !/^Request failed/i.test(error.message)
+        ? `Download failed. ${error.message}`
+        : "Download failed. Please try again.";
+      onToast(message);
+    }
   }
 
   function updateReviewForm(field, value) {
@@ -3140,7 +3299,7 @@ function AgentPage({
             {metadataRows.map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
-                <dd>{value}</dd>
+                <dd style={{ whiteSpace: "pre-line" }}>{value || "—"}</dd>
               </div>
             ))}
           </dl>
@@ -3541,10 +3700,13 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
     tags: "",
     visibility: "public",
     orgId: "",
+    groupId: "",
   });
   const [file, setFile] = useState(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [state, setState] = useState({ status: "idle", message: "" });
+  const [groups, setGroups] = useState([]);
+  const [groupsState, setGroupsState] = useState({ status: "idle", message: "" });
   const [magicState, setMagicState] = useState({ status: "idle", message: "" });
   const [analysisFeedback, setAnalysisFeedback] = useState({ warnings: [], missingFields: [] });
   const [magicVisible, setMagicVisible] = useState(false);
@@ -3558,10 +3720,64 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
   const selectedUploadOrg = manageableOrganizations.find(
     (org) => String(org.id) === String(form.orgId),
   );
+  const selectedUploadGroup = groups.find((group) => String(group.id) === String(form.groupId));
+  const publishDisabled =
+    !file ||
+    state.status === "loading" ||
+    state.status === "success" ||
+    (form.visibility === "group_only" && (!form.orgId || !form.groupId));
   const visibilityDescription =
-    form.visibility === "org_only" && selectedUploadOrg
+    form.visibility === "group_only" && selectedUploadGroup
+      ? `Only members of ${selectedUploadGroup.name} can see this`
+      : form.visibility === "group_only" && selectedUploadOrg
+        ? `Only members of a ${selectedUploadOrg.name} group can see this`
+        : form.visibility === "org_only" && selectedUploadOrg
       ? `Only members of ${selectedUploadOrg.name} can see this`
       : getVisibilityDescription(form.visibility);
+
+  useEffect(() => {
+    if (form.visibility !== "group_only" || !form.orgId) {
+      setGroups([]);
+      setGroupsState({ status: "idle", message: "" });
+      return undefined;
+    }
+
+    let ignore = false;
+    setGroupsState({ status: "loading", message: "Loading groups" });
+
+    async function loadGroups() {
+      try {
+        const data = await getOrganizationGroups(form.orgId);
+        if (ignore) return;
+        const nextGroups = extractAgentList(data).map(normalizeGroup);
+        setGroups(nextGroups);
+        setGroupsState({
+          status: "done",
+          message: nextGroups.length ? "" : "No groups found for this organization.",
+        });
+        setForm((current) => ({
+          ...current,
+          groupId: nextGroups.some((group) => String(group.id) === String(current.groupId))
+            ? current.groupId
+            : "",
+        }));
+      } catch (error) {
+        if (ignore) return;
+        setGroups([]);
+        setGroupsState({
+          status: "error",
+          message: "Could not load groups for this organization.",
+        });
+        setForm((current) => ({ ...current, groupId: "" }));
+      }
+    }
+
+    loadGroups();
+
+    return () => {
+      ignore = true;
+    };
+  }, [form.orgId, form.visibility]);
 
   useEffect(() => {
     setMagicState({ status: "idle", message: "" });
@@ -3642,12 +3858,18 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
         return {
           ...current,
           orgId: nextValue,
-          visibility: nextValue ? "org_only" : current.visibility,
+          groupId: "",
+          visibility:
+            nextValue && current.visibility !== "group_only" ? "org_only" : current.visibility,
         };
       }
 
-      if (field === "visibility" && nextValue !== "org_only") {
-        return { ...current, visibility: nextValue, orgId: "" };
+      if (field === "visibility" && nextValue !== "org_only" && nextValue !== "group_only") {
+        return { ...current, visibility: nextValue, orgId: "", groupId: "" };
+      }
+
+      if (field === "visibility" && nextValue === "org_only") {
+        return { ...current, visibility: nextValue, groupId: "" };
       }
 
       return { ...current, [field]: nextValue };
@@ -3684,6 +3906,10 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
     payload.append("manual", form.userManual.trim());
     payload.append("visibility", form.visibility);
     if (form.orgId) payload.append("org_id", form.orgId);
+    if (form.groupId) {
+      payload.append("group_id", form.groupId);
+      payload.append("groupId", form.groupId);
+    }
 
     uploadMetadataFields.forEach((field) => {
       payload.append(field, String(form[field] || "").trim());
@@ -3761,6 +3987,15 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
       setState({ status: "error", message: "Add a title before uploading." });
       return;
     }
+    if (form.visibility === "group_only" && !form.orgId) {
+      setState({ status: "error", message: "Choose an organization for group-only visibility." });
+      return;
+    }
+    if (form.visibility === "group_only" && !form.groupId) {
+      setState({ status: "error", message: "Choose a group before publishing." });
+      onToast("Choose a group before publishing.");
+      return;
+    }
 
     setState({ status: "loading", message: "Publishing agent" });
     try {
@@ -3775,6 +4010,8 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
         file_name: file.name,
         visibility: form.visibility,
         org_id: form.orgId || null,
+        group_id: form.groupId || null,
+        groupName: selectedUploadGroup?.name || "",
         is_public: form.visibility === "public",
         created_at: new Date().toISOString(),
         featured: true,
@@ -4031,12 +4268,50 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
             </FloatingField>
           ) : null}
 
+          {form.visibility === "group_only" && form.orgId ? (
+            <div className="group-upload-block form-field-animate" style={{ "--field-delay": "1045ms" }}>
+              <FloatingField active={Boolean(form.groupId)} delay={1045} label="Group">
+                <select
+                  value={form.groupId}
+                  onChange={(event) => updateField("groupId", event.target.value)}
+                  disabled={groupsState.status === "loading" || !groups.length}
+                >
+                  {groups.length ? (
+                    <option value="">
+                      {groupsState.status === "loading" ? "Loading groups..." : "Choose a group"}
+                    </option>
+                  ) : (
+                    <option value="">
+                      {groupsState.status === "loading" ? "Loading groups..." : "No groups available"}
+                    </option>
+                  )}
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </FloatingField>
+              {groupsState.status === "done" && !groups.length ? (
+                <small>No groups found in this organization. Ask an organization admin to create a group first.</small>
+              ) : groupsState.status === "error" ? (
+                <small>{groupsState.message}</small>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
             className={`primary-btn publish-btn ${state.status === "success" ? "is-success" : ""} ${
               state.status === "error" ? "is-error" : ""
             }`}
-            disabled={!file || state.status === "loading" || state.status === "success"}
-            title={!file ? "Upload a file first" : undefined}
+            disabled={publishDisabled}
+            title={
+              !file
+                ? "Upload a file first"
+                : form.visibility === "group_only" && !form.groupId
+                  ? "Choose a group before publishing"
+                  : undefined
+            }
             type="submit"
           >
             {state.status === "loading" ? (
@@ -4356,6 +4631,15 @@ function OrgDetailPage({
   const [memberMenuId, setMemberMenuId] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: org.name, description: org.description || "" });
   const [memberDraft, setMemberDraft] = useState({ userId: "", role: "member" });
+  const [groups, setGroups] = useState([]);
+  const [groupsState, setGroupsState] = useState("loading");
+  const [groupFormOpen, setGroupFormOpen] = useState(false);
+  const [groupDraft, setGroupDraft] = useState({ name: "", description: "" });
+  const [groupMemberDraft, setGroupMemberDraft] = useState({
+    groupId: "",
+    userId: "",
+    role: "member",
+  });
 
   const currentMember = orgDetail.members.find(
     (member) => String(member.user_id) === String(devUserId),
@@ -4379,6 +4663,22 @@ function OrgDetailPage({
   useEffect(() => {
     void loadOrg();
   }, [devUserId, loadOrg]);
+
+  const loadGroups = useCallback(async () => {
+    setGroupsState("loading");
+    try {
+      const data = await getOrganizationGroups(org.id);
+      setGroups(extractAgentList(data).map(normalizeGroup));
+      setGroupsState("loaded");
+    } catch {
+      setGroups([]);
+      setGroupsState("error");
+    }
+  }, [org.id]);
+
+  useEffect(() => {
+    void loadGroups();
+  }, [devUserId, loadGroups]);
 
   async function saveOrgEdit(event) {
     event.preventDefault();
@@ -4423,6 +4723,59 @@ function OrgDetailPage({
       onToast("Member added.");
     } catch (error) {
       onToast(error.message || "Could not add member.");
+    }
+  }
+
+  async function submitGroup(event) {
+    event.preventDefault();
+    const name = groupDraft.name.trim();
+    if (!name) {
+      onToast("Group name is required.");
+      return;
+    }
+
+    try {
+      const created = normalizeGroup(
+        await createOrganizationGroup(orgDetail.id, {
+          name,
+          description: groupDraft.description.trim(),
+        }),
+      );
+      setGroups((current) => [created, ...current]);
+      setGroupDraft({ name: "", description: "" });
+      setGroupFormOpen(false);
+      setGroupsState("loaded");
+      onToast("Group created.");
+    } catch (error) {
+      onToast(error.message || "Could not create group.");
+    }
+  }
+
+  async function submitGroupMember(event) {
+    event.preventDefault();
+    if (!groupMemberDraft.groupId || !groupMemberDraft.userId.trim()) {
+      onToast("Choose a group and enter a user id.");
+      return;
+    }
+
+    try {
+      const updated = await addGroupMember(
+        groupMemberDraft.groupId,
+        groupMemberDraft.userId.trim(),
+        groupMemberDraft.role,
+      );
+      const updatedGroup = updated?.group ? normalizeGroup(updated.group) : null;
+      setGroups((current) =>
+        current.map((group) =>
+          String(group.id) === String(groupMemberDraft.groupId)
+            ? updatedGroup || { ...group, member_count: group.member_count + 1 }
+            : group,
+        ),
+      );
+      setGroupMemberDraft({ groupId: "", userId: "", role: "member" });
+      onToast("Group member added.");
+    } catch (error) {
+      onToast(error.message || "Could not add group member.");
     }
   }
 
@@ -4612,6 +4965,103 @@ function OrgDetailPage({
               );
             })}
           </div>
+        </section>
+
+        <section className="org-section">
+          <div className="org-section-header">
+            <h2>Groups</h2>
+            <span>{groups.length} groups</span>
+            {isAdmin ? (
+              <button className="ghost-btn compact" type="button" onClick={() => setGroupFormOpen((open) => !open)}>
+                <Plus size={15} />
+                New group
+              </button>
+            ) : null}
+          </div>
+
+          {groupFormOpen ? (
+            <form className="org-inline-form" onSubmit={submitGroup}>
+              <FloatingField active={Boolean(groupDraft.name)} delay={0} label="Group name">
+                <input
+                  value={groupDraft.name}
+                  onChange={(event) => setGroupDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Design partners"
+                />
+              </FloatingField>
+              <FloatingField active={Boolean(groupDraft.description)} className="textarea-field" delay={40} label="Description">
+                <textarea
+                  value={groupDraft.description}
+                  onChange={(event) => setGroupDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="What this group can access"
+                />
+              </FloatingField>
+              <button className="primary-btn compact" type="submit">Create group</button>
+            </form>
+          ) : null}
+
+          {isAdmin && groups.length ? (
+            <form className="org-member-form" onSubmit={submitGroupMember}>
+              <select
+                value={groupMemberDraft.groupId}
+                onChange={(event) => setGroupMemberDraft((current) => ({ ...current, groupId: event.target.value }))}
+              >
+                <option value="">Choose group</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={groupMemberDraft.userId}
+                onChange={(event) => setGroupMemberDraft((current) => ({ ...current, userId: event.target.value }))}
+                placeholder="User id"
+              />
+              <select
+                value={groupMemberDraft.role}
+                onChange={(event) => setGroupMemberDraft((current) => ({ ...current, role: event.target.value }))}
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button className="primary-btn compact" type="submit">Add to group</button>
+            </form>
+          ) : null}
+
+          {groupsState === "loading" ? (
+            <div className="profile-empty-state">
+              <p>Loading groups...</p>
+            </div>
+          ) : groupsState === "error" ? (
+            <div className="profile-empty-state">
+              <p>Could not load groups.</p>
+              <button className="ghost-btn compact" type="button" onClick={loadGroups}>
+                Retry
+              </button>
+            </div>
+          ) : groups.length ? (
+            <div className="org-group-list">
+              {groups.map((group) => (
+                <article className="org-group-row" key={group.id}>
+                  <span className="org-group-icon">
+                    <Users size={17} />
+                  </span>
+                  <span className="org-member-copy">
+                    <strong>{group.name}</strong>
+                    <small>{group.description || "No description yet."}</small>
+                  </span>
+                  <span className="org-group-meta">{group.member_count} members</span>
+                  <span className="org-group-meta">
+                    {group.created_at ? `Created ${formatDate(group.created_at)}` : "Created recently"}
+                  </span>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="profile-empty-state">
+              <p>No groups found. Create a group in the organization page first.</p>
+            </div>
+          )}
         </section>
 
         <section className="org-section">
@@ -5127,7 +5577,8 @@ function ProfilePage({
   user,
   isOwnProfile,
   allAgents,
-  activity,
+  activity = [],
+  activityState = { status: "idle", message: "" },
   devUserId,
   followedUsers,
   onBack,
@@ -5426,20 +5877,35 @@ function ProfilePage({
           {user.id != null && settings.showActivity ? (
             <section className="profile-section profile-reveal will-animate">
               <h2>Recent activity</h2>
-              <div className="profile-activity-list">
-                {activity.map((item, index) => {
-                  const Icon = profileActivityIcons[item.icon] || Upload;
-                  return (
-                    <div className="profile-activity-item" key={`${item.type}-${index}`}>
-                      <span className="profile-activity-icon" style={{ background: item.color }}>
-                        <Icon size={16} />
-                      </span>
-                      <span className="profile-activity-text">{item.text}</span>
-                      <span className="profile-activity-time">{item.time}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              {activityState.status === "loading" ? (
+                <div className="profile-empty-state profile-activity-placeholder">
+                  <Loader2 className="spin" size={16} />
+                  <p>Loading recent activity...</p>
+                </div>
+              ) : activityState.status === "error" ? (
+                <div className="profile-empty-state">
+                  <p>{activityState.message || "Could not load recent activity."}</p>
+                </div>
+              ) : activity.length ? (
+                <div className="profile-activity-list">
+                  {activity.map((item, index) => {
+                    const Icon = profileActivityIcons[item.icon] || Upload;
+                    return (
+                      <div className="profile-activity-item" key={`${item.type}-${index}`}>
+                        <span className="profile-activity-icon" style={{ background: item.color }}>
+                          <Icon size={16} />
+                        </span>
+                        <span className="profile-activity-text">{item.text}</span>
+                        <span className="profile-activity-time">{item.time}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="profile-empty-state">
+                  <p>No recent activity yet.</p>
+                </div>
+              )}
             </section>
           ) : null}
         </div>
@@ -5633,7 +6099,7 @@ function ProfileEditPanel({ open, user, onClose, onSave, onUpdateUser }) {
   );
 }
 
-function buildShelves(agents, hasSearchResults, lowConfidence = false) {
+function buildShelves(agents, hasSearchResults) {
   if (!agents.length) return [];
 
   const shelves = [];
@@ -5641,10 +6107,8 @@ function buildShelves(agents, hasSearchResults, lowConfidence = false) {
 
   if (hasSearchResults) {
     return [{
-      title: lowConfidence ? "Closest matches" : "Best matches",
-      subtitle: lowConfidence
-        ? `No result cleared ${semanticMatchThresholdLabel}; these are the closest backend-ranked agents.`
-        : `Only backend-ranked matches at ${semanticMatchThresholdLabel} or higher are shown.`,
+      title: "Search results",
+      subtitle: "Agents matching your search.",
       agents: agents.slice(0, 10),
     }];
   }

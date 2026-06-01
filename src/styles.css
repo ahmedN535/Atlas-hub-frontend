@@ -1304,6 +1304,15 @@ input::placeholder {
   gap: 10px;
 }
 
+.agent-card-topline {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.agent-card-topline .agent-icon {
+  margin-right: auto;
+}
+
 .agent-icon {
   display: inline-flex;
   align-items: center;
@@ -1330,6 +1339,11 @@ input::placeholder {
 .match-badge {
   color: var(--green);
   background: var(--green-soft);
+}
+
+.rating-badge {
+  color: var(--gold2);
+  background: rgba(201, 168, 76, 0.12);
 }
 
 .agent-card strong {
@@ -3516,12 +3530,14 @@ button.review-avatar:hover {
 }
 
 .org-member-list,
-.org-agent-list {
+.org-agent-list,
+.org-group-list {
   display: grid;
   gap: 10px;
 }
 
-.org-member-row {
+.org-member-row,
+.org-group-row {
   position: relative;
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto auto;
@@ -3533,7 +3549,8 @@ button.review-avatar:hover {
   background: var(--surface);
 }
 
-.org-member-avatar {
+.org-member-avatar,
+.org-group-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3544,6 +3561,13 @@ button.review-avatar:hover {
   background: rgba(201, 168, 76, 0.15);
   font-size: 11px;
   font-weight: 700;
+}
+
+.org-group-meta {
+  color: var(--text3);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .org-member-copy {
@@ -4751,6 +4775,17 @@ button.review-avatar:hover {
   border: 1px dashed var(--border-strong);
   border-radius: 8px;
   color: var(--text3);
+}
+
+.group-upload-block,
+.profile-activity-placeholder {
+  display: grid;
+  gap: 8px;
+}
+
+.group-upload-block small {
+  color: var(--text3);
+  font-size: 12px;
 }
 
 .profile-activity-list {
