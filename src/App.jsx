@@ -52,9 +52,11 @@ import {
   getAgent,
   getAgents,
   getAgentReviews,
+  getUser,
   getMyAgents,
   getMyOrganizations,
   getOrganization,
+  getUsers,
   getUserFollowers,
   getUserFollowing,
   getUserActivity,
@@ -67,6 +69,7 @@ import {
   updateAgentVisibility,
   updateOrganization,
   updateOrgMemberRole,
+  updateUser,
   removeOrgMember,
 } from "./api/agents.js";
 import AuthModal from "./components/AuthModal.jsx";
@@ -78,7 +81,8 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 });
 
 const modelOptions = ["all", "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3.5-haiku"];
-const DEV_USERS = [
+const DEMO_USERNAMES = ["ada", "grace", "alan"];
+const DEV_USER_FALLBACKS = [
   { id: 1, name: "Ada", initials: "A" },
   { id: 2, name: "Grace", initials: "G" },
   { id: 3, name: "Alan", initials: "AL" },
@@ -102,6 +106,7 @@ const uploadSubtitleWords =
     " ",
   );
 const descriptionLimit = 300;
+const usernameHandlePattern = /^@[a-zA-Z0-9_-]+$/;
 const defaultProfileSettings = {
   showLocation: true,
   showWebsite: true,
@@ -251,8 +256,91 @@ const uploadMetadataFieldConfig = [
   },
 ];
 
-function getDevUser(id) {
-  return DEV_USERS.find((user) => String(user.id) === String(id)) || DEV_USERS[0];
+function getDevFallbackUser(id) {
+  return DEV_USER_FALLBACKS.find((user) => String(user.id) === String(id)) || DEV_USER_FALLBACKS[0];
+}
+
+function formatHandle(username) {
+  const clean = String(username || "").trim().replace(/^@/, "");
+  return clean ? `@${clean}` : "";
+}
+
+function getUserDisplayName(user) {
+  return user?.display_name || user?.displayName || user?.name || user?.username || "";
+}
+
+function getUserUsername(user) {
+  return user?.username || user?.handle?.replace(/^@/, "") || "";
+}
+
+function normalizeUser(user, fallback = {}) {
+  const source = user?.user || user?.profile || user?.data || user;
+  const displayName = getUserDisplayName(source) || fallback.name || "Atlas user";
+  const username = getUserUsername(source) || String(fallback.name || displayName).toLowerCase();
+
+  return {
+    id: source?.id ?? fallback.id ?? null,
+    name: displayName,
+    displayName,
+    display_name: displayName,
+    username,
+    email: source?.email || fallback.email || "",
+    handle: formatHandle(username),
+    bio: source?.bio ?? fallback.bio ?? "",
+    avatar: source?.avatar_url || source?.avatar || null,
+    banner: source?.banner_url || source?.banner || null,
+    location: source?.location || "",
+    website: source?.website || "",
+    joinedAt: source?.created_at || source?.createdAt || fallback.joinedAt || null,
+    role: source?.role || fallback.role || "Contributor",
+    organizations: fallback.organizations || [],
+    stats: fallback.stats || createDefaultCurrentUser().stats,
+    settings: { ...defaultProfileSettings, ...(source?.settings || fallback.settings || {}) },
+    initials: getProfileInitials(displayName),
+    raw: source || null,
+  };
+}
+
+function extractUserList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.users)) return data.users;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
+}
+
+function selectDemoUsers(users) {
+  const normalized = users.map((user) => normalizeUser(user));
+  const byUsername = new Map(
+    normalized.map((user) => [String(user.username || "").toLowerCase(), user]),
+  );
+  const preferred = DEMO_USERNAMES.map((username) => byUsername.get(username)).filter(Boolean);
+  const preferredIds = new Set(preferred.map((user) => String(user.id)));
+  const fillUsers = normalized.filter((user) => !preferredIds.has(String(user.id)));
+  const nextUsers = [...preferred, ...fillUsers].slice(0, 3);
+  return nextUsers.length ? nextUsers : DEV_USER_FALLBACKS.map((user) => normalizeUser(null, user));
+}
+
+async function resolveUserHandle(handle) {
+  const trimmed = String(handle || "").trim();
+  if (!usernameHandlePattern.test(trimmed)) {
+    throw new Error("Enter a username handle like @bob.");
+  }
+
+  const username = trimmed.slice(1).toLowerCase();
+  const users = extractUserList(await getUsers()).map((user) => normalizeUser(user));
+  const match = users.find((user) => String(user.username || "").toLowerCase() === username);
+
+  if (!match) {
+    throw new Error(`No user found for ${trimmed}.`);
+  }
+
+  const userId = Number(match.id);
+  if (!Number.isInteger(userId)) {
+    throw new Error(`No database user id found for ${trimmed}.`);
+  }
+
+  return { ...match, id: userId };
 }
 
 function normalizeVisibility(agent) {
@@ -274,8 +362,23 @@ function getVisibilityDescription(visibility) {
 }
 
 function isAgentOwner(agent, userId) {
-  if (!agent?.uploader_id || userId == null) return false;
-  return String(agent.uploader_id) === String(userId);
+  if (!agent || userId == null) return false;
+  const ownerIds = [
+    agent.uploader_id,
+    agent.uploaderId,
+    agent.user_id,
+    agent.userId,
+    agent.owner_id,
+    agent.ownerId,
+  ].filter((value) => value != null);
+  return ownerIds.some((ownerId) => String(ownerId) === String(userId));
+}
+
+function canDisplayAgentForViewer(agent, viewerId) {
+  if (agent?.visibility !== "group_only") return true;
+  if (isAgentOwner(agent, viewerId)) return true;
+  if (agent.visibleForUserId == null) return true;
+  return viewerId != null && String(agent.visibleForUserId) === String(viewerId);
 }
 
 function getOrgInitials(name) {
@@ -293,7 +396,25 @@ function canManageOrganization(org) {
   return role === "owner" || role === "admin";
 }
 
-function normalizeOrganization(org) {
+function isTruthyFlag(value) {
+  return value === true || String(value).toLowerCase() === "true" || value === 1 || value === "1";
+}
+
+function canUploadToGroup(group) {
+  return isTruthyFlag(group?.can_upload) || isTruthyFlag(group?.is_member);
+}
+
+function getUploadErrorMessage(error, visibility) {
+  const message = error?.message || "";
+  if (/403|forbidden|permission|not authorized/i.test(message)) {
+    return visibility === "group_only"
+      ? "You must be a member of this group to publish there."
+      : "Members can only publish agents to groups they belong to.";
+  }
+  return message || "Could not publish agent.";
+}
+
+function normalizeOrganization(org, context = {}) {
   return {
     id: org.id,
     name: org.name || "Untitled organization",
@@ -305,7 +426,9 @@ function normalizeOrganization(org) {
     member_count: Number(org.member_count ?? org.members?.length ?? 0),
     agent_count: Number(org.agent_count ?? org.agents?.length ?? 0),
     members: Array.isArray(org.members) ? org.members : [],
-    agents: Array.isArray(org.agents) ? org.agents.map(normalizeAgent) : [],
+    agents: Array.isArray(org.agents)
+      ? org.agents.map((agent) => normalizeAgent(agent, context))
+      : [],
   };
 }
 
@@ -327,8 +450,17 @@ function extractAgentList(data) {
   return [];
 }
 
-function normalizeAgent(agent) {
+function normalizeAgent(agent, context = {}) {
   const visibility = normalizeVisibility(agent);
+  const ownerId =
+    agent.owner_id ??
+    agent.ownerId ??
+    agent.uploader_id ??
+    agent.uploaderId ??
+    agent.user_id ??
+    agent.userId ??
+    null;
+  const userId = agent.user_id ?? agent.userId ?? ownerId;
   return {
     id: agent.id,
     name: agent.name || agent.title || "Untitled agent",
@@ -347,7 +479,13 @@ function normalizeAgent(agent) {
     is_public: agent.is_public ?? agent.isPublic ?? visibility === "public",
     created_at: agent.created_at || new Date().toISOString(),
     team: agent.team || agent.uploader_name || agent.uploaderName || agent.user_name || "Atlas contributor",
-    uploader_id: agent.uploader_id ?? agent.uploaderId ?? agent.user_id ?? agent.userId ?? null,
+    user_id: userId,
+    userId,
+    owner_id: ownerId,
+    ownerId,
+    uploader_id: agent.uploader_id ?? agent.uploaderId ?? userId,
+    uploaderId: agent.uploaderId ?? agent.uploader_id ?? userId,
+    visibleForUserId: context.visibleForUserId ?? agent.visibleForUserId ?? null,
     endorsements: Number(agent.endorsements ?? agent.review_count ?? 0),
     downloads: Number(agent.downloads ?? 0),
     featured: Boolean(agent.featured ?? false),
@@ -379,6 +517,10 @@ function normalizeGroup(group) {
     name: group.name || group.group_name || "Untitled group",
     description: group.description || "",
     member_count: Number(group.member_count ?? group.members?.length ?? 0),
+    members: Array.isArray(group.members) ? group.members : [],
+    viewer_group_role: group.viewer_group_role || group.viewerGroupRole || "",
+    is_member: isTruthyFlag(group.is_member ?? group.isMember ?? false),
+    can_upload: isTruthyFlag(group.can_upload ?? group.canUpload ?? false),
     created_at: group.created_at || group.createdAt || "",
   };
 }
@@ -830,6 +972,7 @@ export default function App() {
   const transitionTimerRef = useRef(null);
   const toastTimerRef = useRef(null);
   const detailRequestRef = useRef(0);
+  const profileRequestRef = useRef(0);
   const [isMounted, setIsMounted] = useState(false);
   const [screenTransition, setScreenTransition] = useState("screen-enter");
   const [scrolled, setScrolled] = useState(false);
@@ -853,6 +996,10 @@ export default function App() {
   const [profileActivityState, setProfileActivityState] = useState({ status: "idle", message: "" });
   const [currentUser, setCurrentUser] = useState(createDefaultCurrentUser);
   const [devUserId, setDevUserId] = useState(1);
+  const [demoUsers, setDemoUsers] = useState(() =>
+    DEV_USER_FALLBACKS.map((user) => normalizeUser(null, user)),
+  );
+  const [demoUsersState, setDemoUsersState] = useState({ status: "idle", message: "" });
   const [followedUsers, setFollowedUsers] = useState(() => new Set());
   const [landingQuery, setLandingQuery] = useState("");
   const [toast, setToast] = useState({ message: "", visible: false });
@@ -870,26 +1017,57 @@ export default function App() {
   }, [authLoading]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+
+    let ignore = false;
+    setDemoUsersState({ status: "loading", message: "" });
+
+    async function loadDemoUsers() {
+      try {
+        const data = await getUsers();
+        if (ignore) return;
+        const nextUsers = selectDemoUsers(extractUserList(data));
+        setDemoUsers(nextUsers);
+        setDemoUsersState({ status: "loaded", message: "" });
+        if (!nextUsers.some((user) => String(user.id) === String(devUserId))) {
+          setDevUserId(nextUsers[0]?.id ?? 1);
+        }
+      } catch {
+        if (ignore) return;
+        const fallbackUsers = DEV_USER_FALLBACKS.map((user) => normalizeUser(null, user));
+        setDemoUsers(fallbackUsers);
+        setDemoUsersState({
+          status: "error",
+          message: "Demo users could not be loaded. Profile edits will not be saved.",
+        });
+        if (!fallbackUsers.some((user) => String(user.id) === String(devUserId))) {
+          setDevUserId(fallbackUsers[0]?.id ?? 1);
+        }
+      }
+    }
+
+    loadDemoUsers();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setCurrentUserId(devUserId);
 
     if (!import.meta.env.DEV) return;
 
-    const devUser = getDevUser(devUserId);
-    setCurrentUser((prev) => ({
-      ...prev,
-      id: devUser.id,
-      name: devUser.name,
-      handle: `@${devUser.name.toLowerCase()}`,
-      role: "Contributor",
-      joinedAt: prev.joinedAt || "2026-05-31",
-      stats: prev.stats || createDefaultCurrentUser().stats,
-    }));
-    setProfileUser((viewing) =>
-      viewing?.id != null && String(viewing.id) === String(devUser.id)
-        ? { ...viewing, id: devUser.id, name: devUser.name, handle: `@${devUser.name.toLowerCase()}` }
-        : viewing,
-    );
-  }, [devUserId]);
+    const devUser =
+      demoUsers.find((user) => String(user.id) === String(devUserId)) ||
+      normalizeUser(null, getDevFallbackUser(devUserId));
+
+    setCurrentUserId(devUser.id);
+    setCurrentUser({
+      ...devUser,
+      settings: { ...defaultProfileSettings, ...(devUser.settings || {}) },
+    });
+  }, [demoUsers, devUserId]);
 
   useEffect(() => {
     if (!profile || import.meta.env.DEV) return;
@@ -937,7 +1115,10 @@ export default function App() {
       try {
         const data = await getMyOrganizations();
         if (ignore) return;
-        const nextOrganizations = extractAgentList(data).map(normalizeOrganization);
+        const visibleForUserId = currentUser.id ?? devUserId;
+        const nextOrganizations = extractAgentList(data).map((org) =>
+          normalizeOrganization(org, { visibleForUserId }),
+        );
         setOrganizations(nextOrganizations);
         setCurrentUser((prev) => ({ ...prev, organizations: nextOrganizations }));
       } catch {
@@ -1185,12 +1366,15 @@ export default function App() {
 
   useEffect(() => {
     let ignore = false;
+    const visibleForUserId = currentUser.id ?? devUserId;
 
     async function loadAgents() {
+      setAgents([]);
+      setSearchState((current) => ({ ...current, results: null }));
       try {
         const data = await getAgents();
         if (ignore) return;
-        setAgents((Array.isArray(data) ? data : []).map(normalizeAgent));
+        setAgents((Array.isArray(data) ? data : []).map((agent) => normalizeAgent(agent, { visibleForUserId })));
         setApiState({ status: "live", message: "" });
       } catch (error) {
         if (ignore) return;
@@ -1206,7 +1390,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [currentUser.id, devUserId]);
 
   useEffect(() => {
     const cleanQuery = query.trim();
@@ -1232,7 +1416,10 @@ export default function App() {
       }));
       try {
         const data = await searchAgents(cleanQuery);
-        const results = Array.isArray(data?.results) ? data.results.map(normalizeAgent) : [];
+        const visibleForUserId = currentUser.id ?? devUserId;
+        const results = Array.isArray(data?.results)
+          ? data.results.map((agent) => normalizeAgent(agent, { visibleForUserId }))
+          : [];
         setSearchState({
           status: "live",
           results,
@@ -1254,7 +1441,7 @@ export default function App() {
     }, 450);
 
     return () => window.clearTimeout(timer);
-  }, [query, screen]);
+  }, [currentUser.id, devUserId, query, screen]);
 
   const categories = useMemo(() => {
     const unique = Array.from(new Set(agents.map((agent) => agent.category).filter(Boolean)));
@@ -1265,7 +1452,8 @@ export default function App() {
     const hasBackendRankedResults = Array.isArray(searchState.results);
     const base = hasBackendRankedResults ? searchState.results : localSearch(agents, query);
     const filtered = base.filter((agent) => {
-      if (agent.visibility === "private" && !isAgentOwner(agent, devUserId)) return false;
+      if (!canDisplayAgentForViewer(agent, currentUser.id ?? devUserId)) return false;
+      if (agent.visibility === "private" && !isAgentOwner(agent, currentUser.id ?? devUserId)) return false;
       if (category !== "all" && agent.category !== category) return false;
       if (model !== "all" && agent.model !== model) return false;
       if (publicOnly && agent.visibility !== "public") return false;
@@ -1283,7 +1471,7 @@ export default function App() {
       if (sortBy === "similarity") return Number(b.similarity || 0) - Number(a.similarity || 0);
       return Number(b.featured) - Number(a.featured) || b.endorsements - a.endorsements;
     });
-  }, [agents, category, devUserId, model, publicOnly, query, searchState.results, sortBy]);
+  }, [agents, category, currentUser.id, devUserId, model, publicOnly, query, searchState.results, sortBy]);
 
   const shelves = useMemo(
     () => buildShelves(filteredAgents, Array.isArray(searchState.results)),
@@ -1311,13 +1499,10 @@ export default function App() {
       // ignore — clear local state regardless
     }
     if (import.meta.env.DEV) {
-      const devUser = getDevUser(devUserId);
-      setCurrentUser((prev) => ({
-        ...prev,
-        id: devUser.id,
-        name: devUser.name,
-        handle: `@${devUser.name.toLowerCase()}`,
-      }));
+      const devUser =
+        demoUsers.find((user) => String(user.id) === String(devUserId)) ||
+        normalizeUser(null, getDevFallbackUser(devUserId));
+      setCurrentUser(devUser);
     } else {
       setCurrentUser(createDefaultCurrentUser());
     }
@@ -1356,12 +1541,37 @@ export default function App() {
   }
 
   function openProfile(user) {
-    setProfileUser(user);
+    const normalized = normalizeUser(user);
+    const requestId = profileRequestRef.current + 1;
+    profileRequestRef.current = requestId;
+    setProfileUser(normalized);
     if (screenRef.current !== "profile") {
       navigate("profile");
     } else {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+
+    if (normalized.id == null || Number.isNaN(Number(normalized.id))) return;
+
+    void (async () => {
+      try {
+        const fresh = normalizeUser(await getUser(normalized.id));
+        if (profileRequestRef.current !== requestId) return;
+        setProfileUser((viewing) =>
+          viewing?.id != null && String(viewing.id) === String(fresh.id)
+            ? { ...fresh, organizations: viewing.organizations || fresh.organizations }
+            : viewing,
+        );
+        if (String(fresh.id) === String(currentUser.id)) {
+          setCurrentUser(fresh);
+        }
+        setDemoUsers((users) =>
+          users.map((item) => (String(item.id) === String(fresh.id) ? { ...item, ...fresh } : item)),
+        );
+      } catch {
+        // Keep the already-rendered profile if fresh user data is unavailable.
+      }
+    })();
   }
 
   function openOwnProfile() {
@@ -1369,6 +1579,7 @@ export default function App() {
   }
 
   function closeProfile() {
+    profileRequestRef.current += 1;
     const destination = prevScreenRef.current === "profile" ? "browse" : prevScreenRef.current;
     navigate(destination === "profile" ? "browse" : destination);
     window.setTimeout(() => {
@@ -1377,6 +1588,44 @@ export default function App() {
   }
 
   async function updateCurrentUser(patch) {
+    if (import.meta.env.DEV) {
+      if (!currentUser.id || demoUsersState.status !== "loaded") {
+        showToast("Demo users are offline. Profile edits were not saved.");
+        throw new Error("Demo users are not loaded.");
+      }
+
+      const username = String(patch.handle || currentUser.handle || "").trim().replace(/^@/, "");
+
+      try {
+        const saved = normalizeUser(
+          await updateUser(currentUser.id, {
+            display_name: patch.name,
+            username,
+            bio: patch.bio,
+          }),
+          currentUser,
+        );
+        const merged = {
+          ...saved,
+          organizations: currentUser.organizations,
+          settings: currentUser.settings,
+        };
+
+        setCurrentUser(merged);
+        setDemoUsers((users) =>
+          users.map((user) => (String(user.id) === String(merged.id) ? { ...user, ...merged } : user)),
+        );
+        setProfileUser((viewing) =>
+          viewing?.id != null && String(viewing.id) === String(merged.id) ? merged : viewing,
+        );
+      } catch (error) {
+        showToast(error.message || "Could not save profile.");
+        throw error;
+      }
+
+      return;
+    }
+
     const merged = {
       ...currentUser,
       ...patch,
@@ -1410,7 +1659,9 @@ export default function App() {
   async function openAgent(agent) {
     const requestId = detailRequestRef.current + 1;
     detailRequestRef.current = requestId;
-    setSelectedAgent(agent);
+    const visibleForUserId = currentUser.id ?? devUserId;
+    const pendingAgent = normalizeAgent(agent, { visibleForUserId: agent.visibleForUserId ?? visibleForUserId });
+    setSelectedAgent(pendingAgent);
     if (screenRef.current !== "agent") {
       navigate("agent");
     } else {
@@ -1420,9 +1671,15 @@ export default function App() {
     try {
       const detail = await getAgent(agent.id);
       if (detailRequestRef.current !== requestId) return;
-      setSelectedAgent(normalizeAgent({ ...agent, ...detail }));
-    } catch {
+      setSelectedAgent(normalizeAgent({ ...agent, ...detail }, { visibleForUserId }));
+    } catch (error) {
       if (detailRequestRef.current !== requestId) return;
+      if (/403|404|forbidden|not found/i.test(error?.message || "")) {
+        setAgents((current) => current.filter((item) => String(item.id) !== String(agent.id)));
+        setSelectedAgent(null);
+        navigate("browse");
+        showToast("That agent is not available.");
+      }
     }
   }
 
@@ -1435,7 +1692,7 @@ export default function App() {
   }
 
   function openOrganization(org) {
-    setSelectedOrg(normalizeOrganization(org));
+    setSelectedOrg(normalizeOrganization(org, { visibleForUserId: currentUser.id ?? devUserId }));
     if (screenRef.current !== "org-detail") {
       navigate("org-detail");
     } else {
@@ -1457,15 +1714,45 @@ export default function App() {
 
   function addUploadedAgent(agent) {
     setAgents((current) => [
-      normalizeAgent({ ...agent, team: currentUser.name, uploader_id: currentUser.id }),
+      normalizeAgent(
+        { ...agent, team: currentUser.name, uploader_id: currentUser.id },
+        { visibleForUserId: currentUser.id ?? devUserId },
+      ),
       ...current,
     ]);
   }
 
+  async function handleDeleteAgent(agentId) {
+    const previousAgents = agents;
+    const previousSearchState = searchState;
+    setAgents((current) => current.filter((agent) => String(agent.id) !== String(agentId)));
+    setSearchState((current) =>
+      Array.isArray(current.results)
+        ? { ...current, results: current.results.filter((agent) => String(agent.id) !== String(agentId)) }
+        : current,
+    );
+
+    try {
+      await deleteAgent(agentId);
+      detailRequestRef.current += 1;
+      setSelectedAgent(null);
+      navigate("browse");
+      showToast("Agent deleted.");
+    } catch (error) {
+      setAgents(previousAgents);
+      setSearchState(previousSearchState);
+      showToast("Could not delete this agent.");
+      throw error;
+    }
+  }
+
   function handleDevUserChange(nextUserId) {
-    const nextUser = getDevUser(nextUserId);
+    const nextUser =
+      demoUsers.find((user) => String(user.id) === String(nextUserId)) ||
+      normalizeUser(null, getDevFallbackUser(nextUserId));
     setCurrentUserId(nextUser.id);
     setDevUserId(nextUser.id);
+    setCurrentUser(nextUser);
     showToast(`Switched to ${nextUser.name}`);
   }
 
@@ -1574,6 +1861,7 @@ export default function App() {
           ) : screen === "upload" ? (
             <UploadPage
               currentUser={currentUser}
+              devUserId={devUserId}
               onUploaded={addUploadedAgent}
               onBack={closeUploadPage}
               onToast={showToast}
@@ -1628,6 +1916,7 @@ export default function App() {
               followedUsers={followedUsers}
               onBack={closeAgent}
               onFollow={handleFollowUser}
+              onDelete={handleDeleteAgent}
               onNavigateToAgent={openAgent}
               onOpenProfile={openProfile}
               onToast={showToast}
@@ -1642,6 +1931,7 @@ export default function App() {
               activity={profileActivity}
               activityState={profileActivityState}
               devUserId={devUserId}
+              viewerId={currentUser.id ?? devUserId}
               followedUsers={followedUsers}
               onBack={closeProfile}
               onFollow={handleFollowUser}
@@ -1693,7 +1983,12 @@ export default function App() {
       />
 
       {import.meta.env.DEV ? (
-        <DevUserSelector activeUserId={devUserId} onChange={handleDevUserChange} />
+        <DevUserSelector
+          activeUserId={devUserId}
+          state={demoUsersState}
+          users={demoUsers}
+          onChange={handleDevUserChange}
+        />
       ) : null}
 
       <Toast message={toast.message} visible={toast.visible} />
@@ -1701,16 +1996,19 @@ export default function App() {
   );
 }
 
-function DevUserSelector({ activeUserId, onChange }) {
+function DevUserSelector({ activeUserId, state, users, onChange }) {
   return (
     <div className="dev-user-selector" aria-label="Development user selector">
-      <span>Dev user:</span>
-      {DEV_USERS.map((user) => (
+      <span title={state.message || undefined}>
+        {state.status === "error" ? "Demo users offline:" : "Demo user:"}
+      </span>
+      {users.map((user) => (
         <button
           className={String(activeUserId) === String(user.id) ? "dev-user-btn active" : "dev-user-btn"}
           key={user.id}
           type="button"
           onClick={() => onChange(user.id)}
+          title={user.name}
         >
           {user.initials}
         </button>
@@ -2920,6 +3218,7 @@ function AgentPage({
   devUserId,
   followedUsers,
   onBack,
+  onDelete,
   onFollow,
   onNavigateToAgent,
   onOpenProfile,
@@ -2931,7 +3230,7 @@ function AgentPage({
   const fadeTimerRef = useRef(null);
   const validationTimerRef = useRef(null);
   const tone = getCategoryTone(agent.category);
-  const owner = isAgentOwner(agent, devUserId);
+  const owner = isAgentOwner(agent, currentUser?.id ?? devUserId);
   const mediaItems = useMemo(() => getAgentMedia(agent), [agent]);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [mediaFading, setMediaFading] = useState(false);
@@ -3027,16 +3326,18 @@ function AgentPage({
     () => {
       const sameCategory = allAgents.filter(
         (candidate) =>
+          canDisplayAgentForViewer(candidate, currentUser.id ?? devUserId) &&
           String(candidate.id) !== String(agent.id) && candidate.category === agent.category,
       );
       const fallback = allAgents.filter(
         (candidate) =>
+          canDisplayAgentForViewer(candidate, currentUser.id ?? devUserId) &&
           String(candidate.id) !== String(agent.id) && candidate.category !== agent.category,
       );
 
       return [...sameCategory, ...fallback].slice(0, 3);
     },
-    [agent.category, agent.id, allAgents],
+    [agent.category, agent.id, allAgents, currentUser.id, devUserId],
   );
 
   const activeMedia = mediaItems[activeMediaIndex] || mediaItems[0];
@@ -3096,6 +3397,16 @@ function AgentPage({
         ? `Download failed. ${error.message}`
         : "Download failed. Please try again.";
       onToast(message);
+    }
+  }
+
+  async function handleDelete() {
+    if (!owner || !window.confirm("Delete this agent? This cannot be undone.")) return;
+
+    try {
+      await onDelete?.(agent.id);
+    } catch {
+      // The parent restores local state and shows the delete error toast.
     }
   }
 
@@ -3245,12 +3556,18 @@ function AgentPage({
             </span>
             <span>{formatDate(agent.created_at)}</span>
             {owner ? (
-              <VisibilityDropdown
-                align="left"
-                buttonLabel="Edit visibility"
-                onChange={(visibility) => onUpdateVisibility?.(agent.id, visibility)}
-                visibility={agent.visibility}
-              />
+              <>
+                <VisibilityDropdown
+                  align="left"
+                  buttonLabel="Edit visibility"
+                  onChange={(visibility) => onUpdateVisibility?.(agent.id, visibility)}
+                  visibility={agent.visibility}
+                />
+                <button className="ghost-btn compact my-agent-delete-btn" type="button" onClick={handleDelete}>
+                  <Trash2 size={14} />
+                  Delete
+                </button>
+              </>
             ) : agent.uploader_id != null ? (
               <FollowButton
                 followedUsers={followedUsers}
@@ -3676,7 +3993,7 @@ function ReviewForm({
   );
 }
 
-function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
+function UploadPage({ currentUser, devUserId, onUploaded, onBack, onToast }) {
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
   const submitTimerRef = useRef(null);
@@ -3713,26 +4030,36 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
 
   const detailsDone = Boolean(form.title.trim() && form.userDescription.trim());
   const publishDone = state.status === "success";
-  const manageableOrganizations = useMemo(
-    () => (currentUser.organizations || []).filter(canManageOrganization),
+  const uploadOrganizations = useMemo(
+    () => currentUser.organizations || [],
     [currentUser.organizations],
   );
-  const selectedUploadOrg = manageableOrganizations.find(
+  const selectedUploadOrg = uploadOrganizations.find(
     (org) => String(org.id) === String(form.orgId),
   );
-  const selectedUploadGroup = groups.find((group) => String(group.id) === String(form.groupId));
+  const canUploadToSelectedOrg = Boolean(selectedUploadOrg && canManageOrganization(selectedUploadOrg));
+  const uploadableGroups = useMemo(() => groups.filter(canUploadToGroup), [groups]);
+  const selectedUploadGroup = uploadableGroups.find((group) => String(group.id) === String(form.groupId));
+  const hasNoUploadableGroups =
+    form.visibility === "group_only" &&
+    groupsState.status === "done" &&
+    groups.length > 0 &&
+    uploadableGroups.length === 0;
   const publishDisabled =
     !file ||
     state.status === "loading" ||
     state.status === "success" ||
+    (form.visibility === "org_only" && (!form.orgId || !canUploadToSelectedOrg)) ||
     (form.visibility === "group_only" && (!form.orgId || !form.groupId));
   const visibilityDescription =
     form.visibility === "group_only" && selectedUploadGroup
       ? `Only members of ${selectedUploadGroup.name} can see this`
       : form.visibility === "group_only" && selectedUploadOrg
         ? `Only members of a ${selectedUploadOrg.name} group can see this`
-        : form.visibility === "org_only" && selectedUploadOrg
+        : form.visibility === "org_only" && selectedUploadOrg && canUploadToSelectedOrg
       ? `Only members of ${selectedUploadOrg.name} can see this`
+      : form.visibility === "org_only" && selectedUploadOrg
+        ? "Members can publish only to groups they belong to."
       : getVisibilityDescription(form.visibility);
 
   useEffect(() => {
@@ -3753,11 +4080,15 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
         setGroups(nextGroups);
         setGroupsState({
           status: "done",
-          message: nextGroups.length ? "" : "No groups found for this organization.",
+          message: nextGroups.length
+            ? ""
+            : "No groups found in this organization. Ask an organization admin to create a group first.",
         });
         setForm((current) => ({
           ...current,
-          groupId: nextGroups.some((group) => String(group.id) === String(current.groupId))
+          groupId: nextGroups.some(
+            (group) => canUploadToGroup(group) && String(group.id) === String(current.groupId),
+          )
             ? current.groupId
             : "",
         }));
@@ -3777,7 +4108,7 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
     return () => {
       ignore = true;
     };
-  }, [form.orgId, form.visibility]);
+  }, [devUserId, form.orgId, form.visibility]);
 
   useEffect(() => {
     setMagicState({ status: "idle", message: "" });
@@ -3855,12 +4186,19 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
       field === "userDescription" ? String(value).slice(0, descriptionLimit) : value;
     setForm((current) => {
       if (field === "orgId") {
+        const nextOrg = uploadOrganizations.find((org) => String(org.id) === String(nextValue));
+        const nextVisibility =
+          nextValue && current.visibility !== "group_only"
+            ? canManageOrganization(nextOrg)
+              ? "org_only"
+              : "group_only"
+            : current.visibility;
+
         return {
           ...current,
           orgId: nextValue,
           groupId: "",
-          visibility:
-            nextValue && current.visibility !== "group_only" ? "org_only" : current.visibility,
+          visibility: nextVisibility,
         };
       }
 
@@ -3906,7 +4244,7 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
     payload.append("manual", form.userManual.trim());
     payload.append("visibility", form.visibility);
     if (form.orgId) payload.append("org_id", form.orgId);
-    if (form.groupId) {
+    if (form.visibility === "group_only" && form.groupId) {
       payload.append("group_id", form.groupId);
       payload.append("groupId", form.groupId);
     }
@@ -3987,6 +4325,16 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
       setState({ status: "error", message: "Add a title before uploading." });
       return;
     }
+    if (form.visibility === "org_only" && !form.orgId) {
+      setState({ status: "error", message: "Choose an organization before publishing." });
+      return;
+    }
+    if (form.visibility === "org_only" && !canUploadToSelectedOrg) {
+      const message = "Members can only publish agents to groups they belong to.";
+      setState({ status: "error", message });
+      onToast(message);
+      return;
+    }
     if (form.visibility === "group_only" && !form.orgId) {
       setState({ status: "error", message: "Choose an organization for group-only visibility." });
       return;
@@ -3994,6 +4342,12 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
     if (form.visibility === "group_only" && !form.groupId) {
       setState({ status: "error", message: "Choose a group before publishing." });
       onToast("Choose a group before publishing.");
+      return;
+    }
+    if (form.visibility === "group_only" && !selectedUploadGroup) {
+      const message = "You must be a member of this group to publish there.";
+      setState({ status: "error", message });
+      onToast(message);
       return;
     }
 
@@ -4023,8 +4377,9 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
         onBack();
       }, 800);
     } catch (error) {
-      setState({ status: "error", message: error.message });
-      onToast(error.message);
+      const message = getUploadErrorMessage(error, form.visibility);
+      setState({ status: "error", message });
+      onToast(message);
     }
   }
 
@@ -4245,21 +4600,28 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
                 value={form.visibility}
                 onChange={(event) => updateField("visibility", event.target.value)}
               >
-                {visibilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+                {visibilityOptions.map((option) => {
+                  const disabled =
+                    option.value === "org_only" && Boolean(selectedUploadOrg) && !canUploadToSelectedOrg;
+                  return (
+                    <option disabled={disabled} key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  );
+                })}
               </select>
             </FloatingField>
             <small>{visibilityDescription}</small>
+            {selectedUploadOrg && !canUploadToSelectedOrg ? (
+              <small>Members can publish only to groups they belong to.</small>
+            ) : null}
           </div>
 
-          {manageableOrganizations.length ? (
-            <FloatingField active={Boolean(form.orgId)} delay={1015} label="Add to organization">
+          {uploadOrganizations.length ? (
+            <FloatingField active={Boolean(form.orgId)} delay={1015} label="Organization">
               <select value={form.orgId} onChange={(event) => updateField("orgId", event.target.value)}>
                 <option value="">None (personal)</option>
-                {manageableOrganizations.map((org) => (
+                {uploadOrganizations.map((org) => (
                   <option key={org.id} value={org.id}>
                     {org.name}
                   </option>
@@ -4274,9 +4636,9 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
                 <select
                   value={form.groupId}
                   onChange={(event) => updateField("groupId", event.target.value)}
-                  disabled={groupsState.status === "loading" || !groups.length}
+                  disabled={groupsState.status === "loading" || !uploadableGroups.length}
                 >
-                  {groups.length ? (
+                  {uploadableGroups.length ? (
                     <option value="">
                       {groupsState.status === "loading" ? "Loading groups..." : "Choose a group"}
                     </option>
@@ -4285,7 +4647,7 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
                       {groupsState.status === "loading" ? "Loading groups..." : "No groups available"}
                     </option>
                   )}
-                  {groups.map((group) => (
+                  {uploadableGroups.map((group) => (
                     <option key={group.id} value={group.id}>
                       {group.name}
                     </option>
@@ -4294,6 +4656,8 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
               </FloatingField>
               {groupsState.status === "done" && !groups.length ? (
                 <small>No groups found in this organization. Ask an organization admin to create a group first.</small>
+              ) : hasNoUploadableGroups ? (
+                <small>You are not a member of any group in this organization.</small>
               ) : groupsState.status === "error" ? (
                 <small>{groupsState.message}</small>
               ) : null}
@@ -4308,6 +4672,10 @@ function UploadPage({ currentUser, onUploaded, onBack, onToast }) {
             title={
               !file
                 ? "Upload a file first"
+                : form.visibility === "org_only" && !form.orgId
+                  ? "Choose an organization before publishing"
+                : form.visibility === "org_only" && !canUploadToSelectedOrg
+                  ? "Members can publish only to groups they belong to."
                 : form.visibility === "group_only" && !form.groupId
                   ? "Choose a group before publishing"
                   : undefined
@@ -4651,7 +5019,9 @@ function OrgDetailPage({
   const loadOrg = useCallback(async () => {
     setLoadState("loading");
     try {
-      const data = normalizeOrganization(await getOrganization(org.id));
+      const data = normalizeOrganization(await getOrganization(org.id), {
+        visibleForUserId: currentUser.id ?? devUserId,
+      });
       setOrgDetail(data);
       setEditDraft({ name: data.name, description: data.description || "" });
       setLoadState("loaded");
@@ -4674,7 +5044,7 @@ function OrgDetailPage({
       setGroups([]);
       setGroupsState("error");
     }
-  }, [org.id]);
+  }, [currentUser.id, devUserId, org.id]);
 
   useEffect(() => {
     void loadGroups();
@@ -4704,13 +5074,22 @@ function OrgDetailPage({
 
   async function submitMember(event) {
     event.preventDefault();
-    if (!memberDraft.userId.trim()) {
-      onToast("Enter a user id.");
-      return;
-    }
-
     try {
-      const added = await addOrgMember(orgDetail.id, memberDraft.userId.trim(), memberDraft.role);
+      const user = await resolveUserHandle(memberDraft.userId);
+      if (members.some((member) => String(member.user_id) === String(user.id))) {
+        onToast(`${user.name} is already a member.`);
+        return;
+      }
+
+      const addedRaw = await addOrgMember(orgDetail.id, user.id, memberDraft.role || "member");
+      const added = {
+        user_id: user.id,
+        display_name: user.name,
+        username: user.username,
+        role: memberDraft.role || "member",
+        joined_at: new Date().toISOString(),
+        ...addedRaw,
+      };
       setOrgDetail((current) => ({
         ...current,
         members: [...current.members.filter((member) => String(member.user_id) !== String(added.user_id)), added],
@@ -4753,25 +5132,25 @@ function OrgDetailPage({
 
   async function submitGroupMember(event) {
     event.preventDefault();
-    if (!groupMemberDraft.groupId || !groupMemberDraft.userId.trim()) {
-      onToast("Choose a group and enter a user id.");
+    if (!groupMemberDraft.groupId) {
+      onToast("Choose a group.");
       return;
     }
 
     try {
-      const updated = await addGroupMember(
+      const user = await resolveUserHandle(groupMemberDraft.userId);
+      const selectedGroup = groups.find((group) => String(group.id) === String(groupMemberDraft.groupId));
+      if (selectedGroup?.members?.some((member) => String(member.user_id) === String(user.id))) {
+        onToast(`${user.name} is already a member.`);
+        return;
+      }
+
+      await addGroupMember(
         groupMemberDraft.groupId,
-        groupMemberDraft.userId.trim(),
-        groupMemberDraft.role,
+        user.id,
+        groupMemberDraft.role || "member",
       );
-      const updatedGroup = updated?.group ? normalizeGroup(updated.group) : null;
-      setGroups((current) =>
-        current.map((group) =>
-          String(group.id) === String(groupMemberDraft.groupId)
-            ? updatedGroup || { ...group, member_count: group.member_count + 1 }
-            : group,
-        ),
-      );
+      await loadGroups();
       setGroupMemberDraft({ groupId: "", userId: "", role: "member" });
       onToast("Group member added.");
     } catch (error) {
@@ -4913,7 +5292,7 @@ function OrgDetailPage({
               <input
                 value={memberDraft.userId}
                 onChange={(event) => setMemberDraft((current) => ({ ...current, userId: event.target.value }))}
-                placeholder="User id or username"
+                placeholder="@username"
               />
               <select
                 value={memberDraft.role}
@@ -5015,7 +5394,7 @@ function OrgDetailPage({
               <input
                 value={groupMemberDraft.userId}
                 onChange={(event) => setGroupMemberDraft((current) => ({ ...current, userId: event.target.value }))}
-                placeholder="User id"
+                placeholder="@username"
               />
               <select
                 value={groupMemberDraft.role}
@@ -5129,12 +5508,16 @@ function MyAgentsPage({
     setDeleteConfirmId(null);
     try {
       const data = await getMyAgents();
-      setMyAgents(extractAgentList(data).map(normalizeAgent));
+      setMyAgents(
+        extractAgentList(data).map((agent) =>
+          normalizeAgent(agent, { visibleForUserId: currentUser.id ?? devUserId }),
+        ),
+      );
       setLoadState("loaded");
     } catch {
       setLoadState("error");
     }
-  }, []);
+  }, [currentUser.id, devUserId]);
 
   useEffect(() => {
     void loadMyAgents();
@@ -5349,20 +5732,29 @@ function FollowingFeedPage({
   const [feedAgents, setFeedAgents] = useState([]);
   const [loadState, setLoadState] = useState("loading");
   const visibleFeedAgents = useMemo(
-    () => feedAgents.filter((agent) => agent.visibility !== "private" || isAgentOwner(agent, devUserId)),
-    [devUserId, feedAgents],
+    () =>
+      feedAgents.filter(
+        (agent) =>
+          canDisplayAgentForViewer(agent, currentUser.id ?? devUserId) &&
+          (agent.visibility !== "private" || isAgentOwner(agent, currentUser.id ?? devUserId)),
+      ),
+    [currentUser.id, devUserId, feedAgents],
   );
 
   const loadFeed = useCallback(async () => {
     setLoadState("loading");
     try {
       const data = await getFollowingFeed();
-      setFeedAgents(extractAgentList(data).map(normalizeAgent));
+      setFeedAgents(
+        extractAgentList(data).map((agent) =>
+          normalizeAgent(agent, { visibleForUserId: currentUser.id ?? devUserId }),
+        ),
+      );
       setLoadState("loaded");
     } catch {
       setLoadState("error");
     }
-  }, []);
+  }, [currentUser.id, devUserId]);
 
   useEffect(() => {
     if (currentUser.id === null) return;
@@ -5580,6 +5972,7 @@ function ProfilePage({
   activity = [],
   activityState = { status: "idle", message: "" },
   devUserId,
+  viewerId,
   followedUsers,
   onBack,
   onFollow,
@@ -5599,9 +5992,11 @@ function ProfilePage({
   const publishedAgents = useMemo(
     () =>
       allAgents.filter(
-        (agent) => agent.team === user.name || agent.uploader_id === user.id,
+        (agent) =>
+          canDisplayAgentForViewer(agent, viewerId ?? devUserId) &&
+          (agent.team === user.name || isAgentOwner(agent, user.id)),
       ),
-    [allAgents, user.id, user.name],
+    [allAgents, devUserId, user.id, user.name, viewerId],
   );
 
   useEffect(() => {
@@ -5978,14 +6373,18 @@ function ProfileEditPanel({ open, user, onClose, onSave, onUpdateUser }) {
   function handleSave(event) {
     event.preventDefault();
     void (async () => {
-      await onUpdateUser({
-        name: draft.name.trim() || user.name,
-        handle: draft.handle.trim() || user.handle,
-        bio: draft.bio.trim(),
-        location: draft.location.trim(),
-        website: draft.website.trim(),
-      });
-      onSave();
+      try {
+        await onUpdateUser({
+          name: draft.name.trim() || user.name,
+          handle: draft.handle.trim() || user.handle,
+          bio: draft.bio.trim(),
+          location: draft.location.trim(),
+          website: draft.website.trim(),
+        });
+        onSave();
+      } catch {
+        // The parent shows the save error toast.
+      }
     })();
   }
 

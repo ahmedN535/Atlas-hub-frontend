@@ -90,6 +90,21 @@ export function getAgents() {
   return request("/api/agents");
 }
 
+export function getUsers() {
+  return request("/api/users");
+}
+
+export function getUser(userId) {
+  return request(`/api/users/${userId}`);
+}
+
+export function updateUser(userId, payload) {
+  return request(`/api/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getAgent(agentId) {
   return request(`/api/agents/${agentId}`);
 }
